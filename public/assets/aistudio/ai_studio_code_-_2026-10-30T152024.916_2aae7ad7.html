@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPU Evolver - CPU強化シミュレータ</title>
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --panel-bg: #161b22;
+            --accent-color: #58a6ff;
+            --text-color: #c9d1d9;
+            --text-gold: #f1e05a;
+            --btn-bg: #21262d;
+            --btn-hover: #30363d;
+        }
+
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            max-width: 600px;
+            width: 100%;
+        }
+
+        .header {
+            text-align: center;
+            border-bottom: 2px solid var(--accent-color);
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+        }
+
+        .cpu-name {
+            font-size: 1.5rem;
+            color: var(--accent-color);
+            font-weight: bold;
+        }
+
+        .display-panel {
+            background-color: var(--panel-bg);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            border: 1px solid #30363d;
+        }
+
+        .stat {
+            font-size: 1.2rem;
+            margin: 8px 0;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .stat-value {
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .money {
+            color: var(--text-gold);
+        }
+
+        /* メイン計算ボタン */
+        .click-area {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+
+        #calc-btn {
+            background: linear-gradient(135deg, #1f6feb, #238636);
+            color: white;
+            border: none;
+            padding: 20px 40px;
+            font-size: 1.2rem;
+            font-family: inherit;
+            font-weight: bold;
+            border-radius: 12px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            transition: 0.1s;
+        }
+
+        #calc-btn:active {
+            transform: scale(0.96);
+        }
+
+        /* アップグレード一覧 */
+        .upgrades {
+            display: grid;
+            gap: 10px;
+        }
+
+        .upgrade-btn {
+            background-color: var(--btn-bg);
+            border: 1px solid #30363d;
+            color: var(--text-color);
+            padding: 12px;
+            border-radius: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            font-family: inherit;
+            transition: 0.2s;
+        }
+
+        .upgrade-btn:hover:not(:disabled) {
+            background-color: var(--btn-hover);
+            border-color: var(--accent-color);
+        }
+
+        .upgrade-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .cost {
+            color: var(--text-gold);
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>CPU EVOLVER</h1>
+        <div class="cpu-name" id="cpu-name">4-bit Microprocessor</div>
+        <div id="process-node" style="font-size: 0.9rem; color: #8b949e;">製造プロセス: 10,000 nm</div>
+    </div>
+
+    <div class="display-panel">
+        <div class="stat">資金: <span class="stat-value money" id="money">$0</span></div>
+        <div class="stat">演算能力 (FLOPS): <span class="stat-value" id="flops">0 /s</span></div>
+        <div class="stat">クロック数: <span class="stat-value" id="clock">740 kHz</span></div>
+        <div class="stat">コア数: <span class="stat-value" id="cores">1 Core</span></div>
+    </div>
+
+    <div class="click-area">
+        <button id="calc-btn" onclick="manualCalculate()">⚡ 演算サイクルを実行</button>
+    </div>
+
+    <h3>強化・アップグレード</h3>
+    <div class="upgrades">
+        <button class="upgrade-btn" id="btn-clock" onclick="upgradeClock()">
+            <div>
+                <strong>クロックアップ (+20%)</strong><br>
+                <small>処理速度を向上させます</small>
+            </div>
+            <div class="cost" id="cost-clock">$10</div>
+        </button>
+
+        <button class="upgrade-btn" id="btn-core" onclick="upgradeCore()">
+            <div>
+                <strong>コア増設 (+1 Core)</strong><br>
+                <small>並列処理で生産量を掛け算します</small>
+            </div>
+            <div class="cost" id="cost-core">$50</div>
+        </button>
+
+        <button class="upgrade-btn" id="btn-cache" onclick="upgradeCache()">
+            <div>
+                <strong>キャッシュメモリ増設</strong><br>
+                <small>手動クリック時の獲得資金 +100%</small>
+            </div>
+            <div class="cost" id="cost-cache">$100</div>
+        </button>
+
+        <button class="upgrade-btn" id="btn-evolve" onclick="evolveArchitecture()" style="border-color: #f1e05a;">
+            <div>
+                <strong style="color: #f1e05a;">プロセス世代交代 (進化)</strong><br>
+                <small id="evolve-desc">次世代アーキテクチャへ微細化</small>
+            </div>
+            <div class="cost" id="cost-evolve">$500</div>
+        </button>
+    </div>
+</div>
+
+<script>
+    // ゲームデータ
+    let money = 0;
+    let clockKhz = 740; // 初期740kHz
+    let cores = 1;
+    let clickMultiplier = 1;
+    let architectureLevel = 0;
+
+    // 進化ツリー
+    const architectures = [
+        { name: "4-bit Microprocessor", node: "10,000 nm", mult: 1, cost: 500 },
+        { name: "8-bit Processor (8080系)", node: "6,000 nm", mult: 3, cost: 2500 },
+        { name: "16-bit CISC Processor", node: "3,000 nm", mult: 10, cost: 15000 },
+        { name: "32-bit Pentium世代", node: "350 nm", mult: 50, cost: 100000 },
+        { name: "64-bit Multi-Core時代", node: "45 nm", mult: 300, cost: 1000000 },
+        { name: "Extreme EUV Processor", node: "3 nm", mult: 2000, cost: 10000000 },
+        { name: "超伝導・量子プロセッサ", node: "0.1 nm (Sub-atomic)", mult: 20000, cost: Infinity }
+    ];
+
+    // コスト管理
+    let costs = {
+        clock: 10,
+        core: 50,
+        cache: 100
+    };
+
+    // フォーマット補助関数
+    function formatClock(khz) {
+        if (khz >= 1000000) return (khz / 1000000).toFixed(2) + " GHz";
+        if (khz >= 1000) return (khz / 1000).toFixed(2) + " MHz";
+        return Math.floor(khz) + " kHz";
+    }
+
+    function formatNumber(num) {
+        if (num >= 1e9) return (num / 1e9).toFixed(2) + "B";
+        if (num >= 1e6) return (num / 1e6).toFixed(2) + "M";
+        if (num >= 1e3) return (num / 1e3).toFixed(1) + "k";
+        return Math.floor(num).toLocaleString();
+    }
+
+    // FLOPSの計算 (1秒あたりの自動獲得資金ベース)
+    function getFLOPS() {
+        let arch = architectures[architectureLevel];
+        return (clockKhz / 10) * cores * arch.mult;
+    }
+
+    // 手動クリック
+    function manualCalculate() {
+        let arch = architectures[architectureLevel];
+        let gain = Math.max(1, (clockKhz / 100) * clickMultiplier * arch.mult);
+        money += gain;
+        updateUI();
+    }
+
+    // クロック強化
+    function upgradeClock() {
+        if (money >= costs.clock) {
+            money -= costs.clock;
+            clockKhz *= 1.25;
+            costs.clock = Math.floor(costs.clock * 1.5);
+            updateUI();
+        }
+    }
+
+    // コア増設
+    function upgradeCore() {
+        if (money >= costs.core) {
+            money -= costs.core;
+            cores += 1;
+            costs.core = Math.floor(costs.core * 1.8);
+            updateUI();
+        }
+    }
+
+    // キャッシュ増設
+    function upgradeCache() {
+        if (money >= costs.cache) {
+            money -= costs.cache;
+            clickMultiplier *= 2;
+            costs.cache = Math.floor(costs.cache * 2.5);
+            updateUI();
+        }
+    }
+
+    // プロセス進化
+    function evolveArchitecture() {
+        let nextArch = architectures[architectureLevel + 1];
+        if (nextArch && money >= architectures[architectureLevel].cost) {
+            money -= architectures[architectureLevel].cost;
+            architectureLevel++;
+            updateUI();
+        }
+    }
+
+    // 画面の更新
+    function updateUI() {
+        let currentArch = architectures[architectureLevel];
+        let nextArch = architectures[architectureLevel + 1];
+
+        document.getElementById("money").innerText = "$" + formatNumber(money);
+        document.getElementById("flops").innerText = formatNumber(getFLOPS()) + " FLOP/s";
+        document.getElementById("clock").innerText = formatClock(clockKhz);
+        document.getElementById("cores").innerText = cores + (cores > 1 ? " Cores" : " Core");
+        
+        document.getElementById("cpu-name").innerText = currentArch.name;
+        document.getElementById("process-node").innerText = "製造プロセス: " + currentArch.node;
+
+        // 各ボタンのコスト表示
+        document.getElementById("cost-clock").innerText = "$" + formatNumber(costs.clock);
+        document.getElementById("cost-core").innerText = "$" + formatNumber(costs.core);
+        document.getElementById("cost-cache").innerText = "$" + formatNumber(costs.cache);
+
+        // ボタンの有効化/無効化
+        document.getElementById("btn-clock").disabled = money < costs.clock;
+        document.getElementById("btn-core").disabled = money < costs.core;
+        document.getElementById("btn-cache").disabled = money < costs.cache;
+
+        // 進化ボタン
+        let evolveBtn = document.getElementById("btn-evolve");
+        if (nextArch) {
+            document.getElementById("cost-evolve").innerText = "$" + formatNumber(currentArch.cost);
+            evolveBtn.disabled = money < currentArch.cost;
+        } else {
+            document.getElementById("cost-evolve").innerText = "MAX";
+            document.getElementById("evolve-desc").innerText = "人類の到達点です";
+            evolveBtn.disabled = true;
+        }
+    }
+
+    // ゲームループ (1秒間に10回更新: 自動収入)
+    setInterval(() => {
+        let perTick = getFLOPS() / 10;
+        money += perTick;
+        updateUI();
+    }, 100);
+
+    // 初回初期化
+    updateUI();
+</script>
+
+</body>
+</html>

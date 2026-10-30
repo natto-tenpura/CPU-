@@ -1,0 +1,6 @@
+{
+  "name": "CPU Evolver - CPU強化シミュレータ",
+  "description": "CPUを進化させて演算能力を高めるクリッカー＆放置シミュレーションゲーム。自動セーブ・データバックアップ機能搭載でデータが消えません。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
