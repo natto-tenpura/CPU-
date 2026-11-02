@@ -120,18 +120,31 @@ export const TimeSlipModal: React.FC<TimeSlipModalProps> = ({
             タイムスリップ実行時の変化
           </h3>
 
-          {/* Reset Warning */}
+          {/* Reset & Inheritance Information */}
           <div className="bg-[#0b0f16] border border-rose-900/40 rounded-xl p-3.5 text-xs space-y-2">
             <div className="flex items-center gap-1.5 text-rose-400 font-bold">
               <RotateCcw className="w-4 h-4 shrink-0" />
-              <span>リセットされるデータ (世界線の再構築)</span>
+              <span>リセットされるデータ</span>
             </div>
             <ul className="text-gray-400 space-y-1 pl-4 list-disc text-[11px]">
               <li>
                 <strong className="text-rose-300">所持資金が全額リセット ($0)</strong> になります。
               </li>
+            </ul>
+          </div>
+
+          {/* CPU Preservation Banner */}
+          <div className="bg-[#0b0f16] border border-blue-900/40 rounded-xl p-3.5 text-xs space-y-2">
+            <div className="flex items-center gap-1.5 text-blue-400 font-bold">
+              <ShieldAlert className="w-4 h-4 shrink-0" />
+              <span>CPUの保持・継承 (リセットされません)</span>
+            </div>
+            <ul className="text-gray-300 space-y-1 pl-4 list-disc text-[11px]">
               <li>
-                クロック・コア・キャッシュ・現行アーキテクチャは初期状態へ戻ります。
+                現行アーキテクチャ（<strong className="text-white">{currentMaxArch.name}</strong>）はリセットされず維持されます。
+              </li>
+              <li>
+                クロック周波数、コア数、キャッシュ強化、および各種アップグレード費用もそのまま引き継がれます。
               </li>
             </ul>
           </div>

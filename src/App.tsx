@@ -432,17 +432,8 @@ export default function App() {
       const nextTimeSlipCount = (prev.timeSlipCount || 0) + 1;
       const updated: GameSaveData = {
         ...prev,
-        money: 0, // Reset money to $0 upon Time Slip!
-        clockKhz: 740,
-        cores: 1,
-        clickMultiplier: 1,
-        architectureLevel: 0,
+        money: 0, // Reset money to $0 upon Time Slip (CPU is NOT reset!)
         timeSlipCount: nextTimeSlipCount,
-        costs: {
-          clock: 10,
-          core: 50,
-          cache: 100,
-        },
         stats: {
           ...prev.stats,
           timesTimeSlipped: (prev.stats.timesTimeSlipped || 0) + 1,
@@ -830,9 +821,10 @@ export default function App() {
             {isMaxEvolution ? (
               <>
                 進化がMAXに到達しました！タイムスリップを実行すると
-                <strong className="text-rose-400">「資金は $0 にリセット」</strong>
-                されますが、恒久演算倍率が <strong className="text-amber-400">x10倍</strong>{' '}
-                強化され、新アーキテクチャ
+                <strong className="text-rose-400">「所持資金は $0 にリセット」</strong>
+                されますが、
+                <strong className="text-emerald-400">「CPUスペック（現行アーキテクチャ・クロック数・コア数・強化）はそのまま保持」</strong>
+                され、恒久演算倍率が <strong className="text-amber-400">x10倍</strong> 強化されて新アーキテクチャ
                 <strong className="text-pink-300">「{newlyUnlockableOnTimeSlip.name}」</strong>
                 への進化が解放されます。
                 <span className="text-gray-400 block text-[11px] mt-0.5">
@@ -842,7 +834,7 @@ export default function App() {
             ) : (
               <>
                 現タイムラインの進化がMAX（{getArchitecture(maxAllowedArch).name}）に到達するとタイムスリップが実行可能になります。
-                資金をリセットして次世代世界線へ跳躍し、さらなる進化を解放できます。
+                CPUスペックを保持したまま資金のみリセットして次世代世界線へ跳躍し、さらなる進化を解放できます。
               </>
             )}
           </p>
