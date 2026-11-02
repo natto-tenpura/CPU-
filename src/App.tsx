@@ -832,7 +832,7 @@ export default function App() {
                 <strong className="text-pink-300">「{newlyUnlockableOnTimeSlip.name}」</strong>
                 への進化が解放されます。
                 <span className="text-gray-400 block text-[11px] mt-0.5">
-                  ※タイムスリップにかかる資金は跳躍するたびに高騰します。
+                  ※タイムスリップにかかる資金は跳躍するたびに10,000倍（桁違いに急増）になります。
                 </span>
               </>
             ) : (

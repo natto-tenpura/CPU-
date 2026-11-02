@@ -191,9 +191,9 @@ export const TimeSlipModal: React.FC<TimeSlipModalProps> = ({
               <div className="flex items-start gap-2 bg-blue-950/20 p-2.5 rounded-lg border border-blue-500/20 text-[11px] text-gray-400">
                 <ShieldAlert className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" />
                 <div>
-                  <span className="text-blue-300 font-semibold block">次回跳躍費用の高騰:</span>
+                  <span className="text-blue-300 font-semibold block">次回跳躍費用の高騰 (10,000倍):</span>
                   次回のタイムスリップ必要資金は{' '}
-                  <strong className="text-gray-200">${formatNumber(nextNextCost)}</strong> に上昇します。
+                  <strong className="text-amber-300">${formatNumber(nextNextCost)}</strong>（現在の10,000倍）に上昇します。
                 </div>
               </div>
             </div>
