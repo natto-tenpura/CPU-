@@ -2,7 +2,8 @@
  * CPU Evolver - CPU強化シミュレータ
  * 
  * Bulletproof persistent incremental CPU evolution simulator.
- * Ensures player data is never lost across reloads, browser closes, or device migrations.
+ * Features multi-tier Time Slip prestige mechanics with escalating costs,
+ * money reset, and unlocked higher-dimension architecture progression.
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -18,10 +19,19 @@ import {
   Check,
   ChevronRight,
   TrendingUp,
-  RotateCw,
+  Hourglass,
+  Sparkles,
+  AlertCircle,
 } from 'lucide-react';
 
-import { ARCHITECTURES, Architecture, GameSaveData } from './types.ts';
+import {
+  Architecture,
+  GameSaveData,
+  getArchitecture,
+  getMaxArchitectureLevel,
+  getTimeSlipCost,
+  getTimeSlipMultiplier,
+} from './types.ts';
 import {
   loadGameData,
   saveGameData,
@@ -33,6 +43,7 @@ import { CpuVisualizer } from './components/CpuVisualizer.tsx';
 import { OfflineEarningsModal } from './components/OfflineEarningsModal.tsx';
 import { SaveManagerModal } from './components/SaveManagerModal.tsx';
 import { StatsModal } from './components/StatsModal.tsx';
+import { TimeSlipModal } from './components/TimeSlipModal.tsx';
 
 interface FloatingGain {
   id: number;
@@ -58,6 +69,7 @@ export default function App() {
   // Modals
   const [isSaveManagerOpen, setIsSaveManagerOpen] = useState(false);
   const [isStatsOpen, setIsStatsOpen] = useState(false);
+  const [isTimeSlipOpen, setIsTimeSlipOpen] = useState(false);
 
   // Transient UI states
   const [lastSavedTime, setLastSavedTime] = useState<number>(Date.now());
@@ -72,6 +84,7 @@ export default function App() {
 
   // Number formatting
   const formatNumber = useCallback((num: number): string => {
+    if (num >= 1e15) return (num / 1e15).toFixed(2) + 'Q';
     if (num >= 1e12) return (num / 1e12).toFixed(2) + 'T';
     if (num >= 1e9) return (num / 1e9).toFixed(2) + 'B';
     if (num >= 1e6) return (num / 1e6).toFixed(2) + 'M';
@@ -85,20 +98,34 @@ export default function App() {
     return Math.floor(khz) + ' kHz';
   }, []);
 
-  const currentArch: Architecture = ARCHITECTURES[gameState.architectureLevel] || ARCHITECTURES[0];
-  const nextArch: Architecture | undefined = ARCHITECTURES[gameState.architectureLevel + 1];
+  // Time Slip & Architecture Calculations
+  const timeSlipCount = gameState.timeSlipCount || 0;
+  const timeSlipMult = getTimeSlipMultiplier(timeSlipCount);
+  const maxAllowedArch = getMaxArchitectureLevel(timeSlipCount);
 
-  // FLOPS (演算能力)
+  const currentArch: Architecture = getArchitecture(gameState.architectureLevel);
+  const isMaxEvolution = gameState.architectureLevel >= maxAllowedArch;
+  const nextArch: Architecture | undefined = !isMaxEvolution
+    ? getArchitecture(gameState.architectureLevel + 1)
+    : undefined;
+
+  const timeSlipCost = getTimeSlipCost(timeSlipCount);
+  const canTimeSlip = gameState.money >= timeSlipCost;
+  const newlyUnlockableOnTimeSlip = getArchitecture(maxAllowedArch + 1);
+
+  // FLOPS (演算能力 with Time Slip permanent multiplier)
   const getFLOPS = useCallback((): number => {
-    const arch = ARCHITECTURES[gameState.architectureLevel] || ARCHITECTURES[0];
-    return (gameState.clockKhz / 10) * gameState.cores * arch.mult;
-  }, [gameState.architectureLevel, gameState.clockKhz, gameState.cores]);
+    const arch = getArchitecture(gameState.architectureLevel);
+    const tsMult = getTimeSlipMultiplier(gameState.timeSlipCount || 0);
+    return (gameState.clockKhz / 10) * gameState.cores * arch.mult * tsMult;
+  }, [gameState.architectureLevel, gameState.clockKhz, gameState.cores, gameState.timeSlipCount]);
 
-  // Click gain
+  // Click gain with Time Slip permanent multiplier
   const getClickGain = useCallback((): number => {
-    const arch = ARCHITECTURES[gameState.architectureLevel] || ARCHITECTURES[0];
-    return Math.max(1, (gameState.clockKhz / 100) * gameState.clickMultiplier * arch.mult);
-  }, [gameState.architectureLevel, gameState.clockKhz, gameState.clickMultiplier]);
+    const arch = getArchitecture(gameState.architectureLevel);
+    const tsMult = getTimeSlipMultiplier(gameState.timeSlipCount || 0);
+    return Math.max(1, (gameState.clockKhz / 100) * gameState.clickMultiplier * arch.mult * tsMult);
+  }, [gameState.architectureLevel, gameState.clockKhz, gameState.clickMultiplier, gameState.timeSlipCount]);
 
   // Check achievements
   const checkAchievements = useCallback((currentData: GameSaveData): string[] => {
@@ -110,7 +137,11 @@ export default function App() {
     if (currentData.architectureLevel >= 3) unlocked.add('pentium_era');
     if (currentData.architectureLevel >= 5) unlocked.add('euv_era');
     if (currentData.architectureLevel >= 6) unlocked.add('quantum_era');
+    if (currentData.architectureLevel >= 7) unlocked.add('photonic_era');
+    if ((currentData.timeSlipCount || 0) >= 1) unlocked.add('timeslip_1');
+    if ((currentData.timeSlipCount || 0) >= 3) unlocked.add('timeslip_3');
     if (currentData.stats.totalMoneyEarned >= 1000000) unlocked.add('millionaire');
+    if (currentData.stats.totalMoneyEarned >= 1000000000) unlocked.add('billionaire');
     return Array.from(unlocked);
   }, []);
 
@@ -138,8 +169,9 @@ export default function App() {
       setTimeout(() => setSaveNotice(null), 5000);
     }
 
-    const arch = ARCHITECTURES[data.architectureLevel] || ARCHITECTURES[0];
-    const flops = (data.clockKhz / 10) * data.cores * arch.mult;
+    const arch = getArchitecture(data.architectureLevel);
+    const tsMult = getTimeSlipMultiplier(data.timeSlipCount || 0);
+    const flops = (data.clockKhz / 10) * data.cores * arch.mult * tsMult;
     const offlineResult = calculateOfflineEarnings(data.stats.lastSavedTimestamp, flops);
 
     if (offlineResult && offlineResult.offlineEarned > 0) {
@@ -174,12 +206,13 @@ export default function App() {
     setOfflineData(null);
   };
 
-  // Automated game loop (100ms = 10 ticks/sec, matching original script)
+  // Automated game loop (100ms = 10 ticks/sec)
   useEffect(() => {
     const interval = setInterval(() => {
       const current = gameStateRef.current;
-      const arch = ARCHITECTURES[current.architectureLevel] || ARCHITECTURES[0];
-      const flops = (current.clockKhz / 10) * current.cores * arch.mult;
+      const arch = getArchitecture(current.architectureLevel);
+      const tsMult = getTimeSlipMultiplier(current.timeSlipCount || 0);
+      const flops = (current.clockKhz / 10) * current.cores * arch.mult * tsMult;
       const perTick = flops / 10;
 
       if (perTick > 0) {
@@ -268,10 +301,8 @@ export default function App() {
         },
       };
 
-      // Check achievements
       updated.unlockedAchievements = checkAchievements(updated);
 
-      // Save every 25 clicks immediately
       if (nextClicks % 25 === 0) {
         executeSave(updated);
       }
@@ -352,11 +383,11 @@ export default function App() {
     });
   };
 
+  // Evolve Architecture
   const handleEvolveArchitecture = () => {
-    if (!nextArch || gameState.money < currentArch.cost) return;
+    if (!nextArch || isMaxEvolution || gameState.money < currentArch.cost) return;
     playSound.evolve(gameState.settings.soundEnabled);
 
-    // Confetti celebration
     try {
       confetti({
         particleCount: 80,
@@ -364,9 +395,7 @@ export default function App() {
         origin: { y: 0.6 },
         colors: [currentArch.color, '#58a6ff', '#f1e05a', '#ffffff'],
       });
-    } catch {
-      // Confetti fallback
-    }
+    } catch {}
 
     setGameState((prev) => {
       const updated: GameSaveData = {
@@ -382,6 +411,54 @@ export default function App() {
       executeSave(updated);
       return updated;
     });
+  };
+
+  // Execute Time Slip Prestige
+  const handleConfirmTimeSlip = () => {
+    if (gameState.money < timeSlipCost) return;
+    playSound.timeSlip(gameState.settings.soundEnabled);
+
+    // Cosmic warp confetti celebration
+    try {
+      confetti({
+        particleCount: 140,
+        spread: 100,
+        origin: { y: 0.5 },
+        colors: ['#a855f7', '#ec4899', '#f59e0b', '#06b6d4', '#ffffff'],
+      });
+    } catch {}
+
+    setGameState((prev) => {
+      const nextTimeSlipCount = (prev.timeSlipCount || 0) + 1;
+      const updated: GameSaveData = {
+        ...prev,
+        money: 0, // Reset money to $0 upon Time Slip!
+        clockKhz: 740,
+        cores: 1,
+        clickMultiplier: 1,
+        architectureLevel: 0,
+        timeSlipCount: nextTimeSlipCount,
+        costs: {
+          clock: 10,
+          core: 50,
+          cache: 100,
+        },
+        stats: {
+          ...prev.stats,
+          timesTimeSlipped: (prev.stats.timesTimeSlipped || 0) + 1,
+        },
+      };
+
+      updated.unlockedAchievements = checkAchievements(updated);
+      executeSave(updated);
+      return updated;
+    });
+
+    const newlyUnlocked = getArchitecture(maxAllowedArch + 1);
+    setSaveNotice(
+      `第 ${timeSlipCount + 2} 世代世界線へタイムスリップ！新アーキテクチャ「${newlyUnlocked.name}」への進化が解放されました！`
+    );
+    setTimeout(() => setSaveNotice(null), 6000);
   };
 
   // Toggle Sound
@@ -416,19 +493,19 @@ export default function App() {
   const clickGain = getClickGain();
 
   return (
-    <div className="min-h-screen bg-[#0d1117] text-[#c9d1d9] font-mono selection:bg-blue-600 selection:text-white flex flex-col items-center p-3 sm:p-6">
+    <div className="min-h-screen bg-[#0d1117] text-[#c9d1d9] font-mono selection:bg-purple-600 selection:text-white flex flex-col items-center p-3 sm:p-6">
       {/* Save Notification Toast */}
       {saveNotice && (
-        <div className="fixed top-4 z-50 bg-emerald-950/90 border border-emerald-500 text-emerald-300 px-4 py-2 rounded-xl shadow-xl text-xs flex items-center gap-2 animate-bounce">
-          <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          {saveNotice}
+        <div className="fixed top-4 z-50 bg-gradient-to-r from-purple-950/95 to-slate-900/95 border border-purple-400 text-purple-200 px-4 py-2.5 rounded-xl shadow-2xl text-xs flex items-center gap-2 animate-bounce">
+          <Hourglass className="w-4 h-4 text-purple-300 animate-spin" style={{ animationDuration: '4s' }} />
+          <span>{saveNotice}</span>
         </div>
       )}
 
       {/* Main Container */}
       <div className="max-w-[660px] w-full">
-        {/* Top Control Bar: Protection Badge & Tool buttons */}
-        <div className="flex items-center justify-between py-2 mb-2 text-xs border-b border-[#21262d] pb-3">
+        {/* Top Control Bar: Protection Badge, Timeline Info & Tool buttons */}
+        <div className="flex items-center justify-between py-2 mb-2 text-xs border-b border-[#21262d] pb-3 gap-2 flex-wrap sm:flex-nowrap">
           {/* Data Protection Indicator */}
           <button
             onClick={() => setIsSaveManagerOpen(true)}
@@ -444,11 +521,27 @@ export default function App() {
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
               自動保存中
             </span>
-            <span className="text-[10px] text-gray-500 hidden sm:inline">(データ保護有効)</span>
+          </button>
+
+          {/* Time Slip Timeline Era Badge */}
+          <button
+            onClick={() => setIsTimeSlipOpen(true)}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border transition-all cursor-pointer ${
+              canTimeSlip && isMaxEvolution
+                ? 'bg-purple-900/60 border-purple-400 text-purple-200 shadow-md shadow-purple-950 animate-pulse'
+                : 'bg-[#161b22] border-purple-500/30 text-purple-300 hover:border-purple-400'
+            }`}
+            title="タイムスリップ世界線情報"
+          >
+            <Hourglass className="w-3.5 h-3.5 text-purple-400" />
+            <span className="font-bold">第 {timeSlipCount + 1} 世代世界線</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-950 text-amber-300 font-bold border border-purple-500/40">
+              x{timeSlipMult.toLocaleString()}
+            </span>
           </button>
 
           {/* Action buttons */}
-          <div className="flex items-center space-x-1 sm:space-x-2">
+          <div className="flex items-center space-x-1 sm:space-x-2 ml-auto">
             <button
               onClick={handleManualSave}
               className="px-2.5 py-1 rounded-lg bg-[#21262d] hover:bg-[#30363d] text-gray-300 text-xs flex items-center gap-1 border border-[#30363d] transition-colors cursor-pointer"
@@ -488,7 +581,14 @@ export default function App() {
               CPU EVOLVER
             </h1>
           </div>
-          <div className="text-lg sm:text-xl font-bold text-[#58a6ff] mt-1">{currentArch.name}</div>
+          <div className="text-lg sm:text-xl font-bold text-[#58a6ff] mt-1 flex items-center justify-center gap-2">
+            <span>{currentArch.name}</span>
+            {timeSlipCount > 0 && (
+              <span className="text-[11px] px-2 py-0.5 rounded-md bg-purple-900/60 border border-purple-400/40 text-purple-300 font-normal">
+                世界線 #{timeSlipCount + 1}
+              </span>
+            )}
+          </div>
           <div className="text-xs text-[#8b949e] mt-0.5">製造プロセス: {currentArch.node}</div>
         </header>
 
@@ -510,7 +610,14 @@ export default function App() {
 
             <div className="flex justify-between items-center bg-[#0d1117] px-3.5 py-2.5 rounded-lg border border-[#21262d]">
               <span className="text-gray-400 text-sm">演算能力:</span>
-              <span className="font-bold text-white text-lg">{formatNumber(flops)} /s</span>
+              <div className="text-right">
+                <span className="font-bold text-white text-lg">{formatNumber(flops)} /s</span>
+                {timeSlipCount > 0 && (
+                  <span className="block text-[10px] text-amber-400">
+                    (x{timeSlipMult.toLocaleString()} 時空ブースト)
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="flex justify-between items-center bg-[#0d1117] px-3.5 py-2.5 rounded-lg border border-[#21262d]">
@@ -629,31 +736,152 @@ export default function App() {
 
             {/* Evolution Upgrade */}
             <button
-              onClick={handleEvolveArchitecture}
-              disabled={!nextArch || gameState.money < currentArch.cost}
-              className="w-full bg-[#21262d] border-2 border-[#f1e05a]/60 hover:border-[#f1e05a] hover:bg-[#30363d] disabled:opacity-40 disabled:hover:border-[#f1e05a]/60 disabled:hover:bg-[#21262d] disabled:cursor-not-allowed text-[#c9d1d9] p-3.5 rounded-xl flex items-center justify-between transition-all cursor-pointer text-left shadow-lg"
+              onClick={!isMaxEvolution ? handleEvolveArchitecture : () => setIsTimeSlipOpen(true)}
+              disabled={!isMaxEvolution && gameState.money < currentArch.cost}
+              className={`w-full bg-[#21262d] border-2 p-3.5 rounded-xl flex items-center justify-between transition-all cursor-pointer text-left shadow-lg ${
+                isMaxEvolution
+                  ? 'border-purple-500/80 hover:border-purple-400 bg-purple-950/20'
+                  : 'border-[#f1e05a]/60 hover:border-[#f1e05a] hover:bg-[#30363d] disabled:opacity-40 disabled:hover:border-[#f1e05a]/60 disabled:hover:bg-[#21262d] disabled:cursor-not-allowed'
+              } text-[#c9d1d9]`}
             >
               <div>
                 <div className="flex items-center gap-1.5">
-                  <strong className="text-[#f1e05a] text-sm sm:text-base font-bold">
-                    プロセス世代交代 (進化)
+                  <strong
+                    className={`text-sm sm:text-base font-bold ${
+                      isMaxEvolution ? 'text-purple-300' : 'text-[#f1e05a]'
+                    }`}
+                  >
+                    {isMaxEvolution ? '現タイムライン進化上限 (MAX)' : 'プロセス世代交代 (進化)'}
                   </strong>
-                  <ChevronRight className="w-4 h-4 text-[#f1e05a]" />
+                  <ChevronRight
+                    className={`w-4 h-4 ${isMaxEvolution ? 'text-purple-400' : 'text-[#f1e05a]'}`}
+                  />
                 </div>
                 <p className="text-xs text-gray-300 mt-0.5">
-                  {nextArch
+                  {!isMaxEvolution && nextArch
                     ? `次世代「${nextArch.name}」へ微細化 (生産倍率 x${nextArch.mult.toLocaleString()})`
-                    : '人類の到達点です (最大進化完了)'}
+                    : `これ以上の進化はタイムスリップが必要です (次: ${newlyUnlockableOnTimeSlip.name})`}
                 </p>
               </div>
               <div className="text-right">
-                <span className="text-xs text-gray-400 block">進化コスト</span>
-                <span className="text-[#f1e05a] font-bold text-sm sm:text-base">
-                  {nextArch ? `$${formatNumber(currentArch.cost)}` : 'MAX'}
+                <span className="text-xs text-gray-400 block">
+                  {isMaxEvolution ? '状態' : '進化コスト'}
+                </span>
+                <span
+                  className={`font-bold text-sm sm:text-base ${
+                    isMaxEvolution ? 'text-purple-300' : 'text-[#f1e05a]'
+                  }`}
+                >
+                  {!isMaxEvolution ? `$${formatNumber(currentArch.cost)}` : 'MAX到達'}
                 </span>
               </div>
             </button>
           </div>
+        </div>
+
+        {/* TIME SLIP (PRESTIGE) SECTION */}
+        <div
+          className={`rounded-2xl p-4 sm:p-5 mb-6 border-2 transition-all ${
+            isMaxEvolution
+              ? canTimeSlip
+                ? 'bg-gradient-to-br from-purple-950/70 via-slate-900/90 to-pink-950/60 border-purple-400 shadow-2xl shadow-purple-950'
+                : 'bg-[#14121d] border-purple-500/50 shadow-lg'
+              : 'bg-[#121620] border-gray-800/80 opacity-90'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-3 border-b border-gray-800 pb-2.5">
+            <div className="flex items-center gap-2">
+              <div
+                className={`p-2 rounded-xl ${
+                  isMaxEvolution
+                    ? 'bg-purple-900/60 text-purple-300 border border-purple-500/40'
+                    : 'bg-gray-800 text-gray-400'
+                }`}
+              >
+                <Hourglass
+                  className={`w-5 h-5 ${isMaxEvolution ? 'animate-spin' : ''}`}
+                  style={{ animationDuration: '6s' }}
+                />
+              </div>
+              <div>
+                <h3 className="text-sm sm:text-base font-extrabold text-white flex items-center gap-1.5">
+                  <span>タイムスリップ（時空跳躍・超越進化）</span>
+                  {isMaxEvolution && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-pink-950 border border-pink-500/50 text-pink-300 font-bold">
+                      解放中
+                    </span>
+                  )}
+                </h3>
+                <span className="text-[11px] text-gray-400">
+                  第 {timeSlipCount + 1} 世代 → 第 {timeSlipCount + 2} 世代世界線へ
+                </span>
+              </div>
+            </div>
+
+            <div className="text-right">
+              <span className="text-[10px] text-gray-400 block">跳躍必要資金</span>
+              <span className="text-sm sm:text-base font-black text-amber-400">
+                ${formatNumber(timeSlipCost)}
+              </span>
+            </div>
+          </div>
+
+          <p className="text-xs text-gray-300 leading-relaxed mb-3">
+            {isMaxEvolution ? (
+              <>
+                進化がMAXに到達しました！タイムスリップを実行すると
+                <strong className="text-rose-400">「資金は $0 にリセット」</strong>
+                されますが、恒久演算倍率が <strong className="text-amber-400">x10倍</strong>{' '}
+                強化され、新アーキテクチャ
+                <strong className="text-pink-300">「{newlyUnlockableOnTimeSlip.name}」</strong>
+                への進化が解放されます。
+                <span className="text-gray-400 block text-[11px] mt-0.5">
+                  ※タイムスリップにかかる資金は跳躍するたびに高騰します。
+                </span>
+              </>
+            ) : (
+              <>
+                現タイムラインの進化がMAX（{getArchitecture(maxAllowedArch).name}）に到達するとタイムスリップが実行可能になります。
+                資金をリセットして次世代世界線へ跳躍し、さらなる進化を解放できます。
+              </>
+            )}
+          </p>
+
+          {/* Progress to Time Slip Cost */}
+          <div className="bg-[#0b0f16] rounded-xl p-3 border border-gray-800 mb-4">
+            <div className="flex justify-between items-center text-xs mb-1.5">
+              <span className="text-gray-400">資金蓄積率:</span>
+              <span className="font-bold text-gray-200">
+                ${formatNumber(gameState.money)} / ${formatNumber(timeSlipCost)} (
+                {Math.min(100, Math.floor((gameState.money / timeSlipCost) * 100))}%)
+              </span>
+            </div>
+            <div className="w-full h-2.5 bg-gray-900 rounded-full overflow-hidden border border-gray-800">
+              <div
+                className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full transition-all duration-300"
+                style={{
+                  width: `${Math.min(100, (gameState.money / timeSlipCost) * 100)}%`,
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Time Slip Action Button */}
+          <button
+            onClick={() => setIsTimeSlipOpen(true)}
+            className={`w-full py-3.5 px-4 rounded-xl text-xs sm:text-sm font-bold tracking-wide transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg ${
+              isMaxEvolution && canTimeSlip
+                ? 'bg-gradient-to-r from-purple-600 via-pink-600 to-amber-500 hover:from-purple-500 hover:to-amber-400 text-white animate-pulse'
+                : 'bg-[#21262d] hover:bg-[#30363d] text-gray-300 border border-[#30363d]'
+            }`}
+          >
+            <Hourglass className="w-4 h-4" />
+            {isMaxEvolution
+              ? canTimeSlip
+                ? '🌌 タイムスリップを実行（資金リセット ＆ 更なる進化解放）'
+                : `タイムスリップの準備中 (あと $${formatNumber(timeSlipCost - gameState.money)} 必要)`
+              : 'タイムスリップの詳細・ロードマップを確認'}
+          </button>
         </div>
 
         {/* Footer info & Data persistence reminder */}
@@ -661,21 +889,29 @@ export default function App() {
           <div className="flex items-center justify-center gap-2">
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
             <span className="text-gray-400">
-              データは安全に自動保存されています (最終保存: {Math.max(0, Math.floor((Date.now() - lastSavedTime) / 1000))}秒前)
+              データは安全に自動保存されています (最終保存:{' '}
+              {Math.max(0, Math.floor((Date.now() - lastSavedTime) / 1000))}秒前)
             </span>
           </div>
 
-          <div className="flex items-center justify-center gap-4 text-[11px]">
+          <div className="flex items-center justify-center gap-4 text-[11px] flex-wrap">
             <button
               onClick={() => setIsSaveManagerOpen(true)}
               className="text-blue-400 hover:text-blue-300 underline cursor-pointer"
             >
-              バックアップ・引継ぎコード
+              バックアップ・引継ぎ
+            </button>
+            <span>•</span>
+            <button
+              onClick={() => setIsTimeSlipOpen(true)}
+              className="text-purple-400 hover:text-purple-300 underline cursor-pointer"
+            >
+              タイムスリップ世界線
             </button>
             <span>•</span>
             <button
               onClick={() => setIsStatsOpen(true)}
-              className="text-purple-400 hover:text-purple-300 underline cursor-pointer"
+              className="text-pink-400 hover:text-pink-300 underline cursor-pointer"
             >
               プレイ統計・実績
             </button>
@@ -684,7 +920,7 @@ export default function App() {
               onClick={handleManualSave}
               className="text-emerald-400 hover:text-emerald-300 underline cursor-pointer"
             >
-              手動保存
+              即時保存
             </button>
           </div>
         </footer>
@@ -700,6 +936,16 @@ export default function App() {
           formatNumber={formatNumber}
         />
       )}
+
+      {/* Time Slip Confirmation Modal */}
+      <TimeSlipModal
+        isOpen={isTimeSlipOpen}
+        onClose={() => setIsTimeSlipOpen(false)}
+        timeSlipCount={timeSlipCount}
+        currentMoney={gameState.money}
+        onConfirmTimeSlip={handleConfirmTimeSlip}
+        formatNumber={formatNumber}
+      />
 
       {/* Save & Backup Manager Modal */}
       <SaveManagerModal
@@ -718,6 +964,7 @@ export default function App() {
         onClose={() => setIsStatsOpen(false)}
         stats={gameState.stats}
         currentArch={currentArch}
+        timeSlipCount={timeSlipCount}
         formatNumber={formatNumber}
         unlockedAchievements={gameState.unlockedAchievements}
       />

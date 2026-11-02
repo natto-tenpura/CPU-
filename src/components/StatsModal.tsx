@@ -1,12 +1,24 @@
 import React from 'react';
-import { BarChart3, X, Trophy, Clock, MousePointerClick, Zap, Layers, DollarSign } from 'lucide-react';
-import { GameStats, Architecture } from '../types.ts';
+import {
+  BarChart3,
+  X,
+  Trophy,
+  Clock,
+  MousePointerClick,
+  Zap,
+  Layers,
+  DollarSign,
+  Hourglass,
+  Sparkles,
+} from 'lucide-react';
+import { GameStats, Architecture, getTimeSlipMultiplier } from '../types.ts';
 
 interface StatsModalProps {
   isOpen: boolean;
   onClose: () => void;
   stats: GameStats;
   currentArch: Architecture;
+  timeSlipCount: number;
   formatNumber: (num: number) => string;
   unlockedAchievements: string[];
 }
@@ -26,7 +38,11 @@ const ALL_ACHIEVEMENTS: AchievementDef[] = [
   { id: 'pentium_era', title: 'パーソナルPC黎明期', desc: '32-bit Pentium世代へ進化', icon: '💾' },
   { id: 'euv_era', title: 'ナノメートル微細化', desc: 'Extreme EUV Processor (3nm) へ進化', icon: '🔬' },
   { id: 'quantum_era', title: '量子超越性', desc: '超伝導・量子プロセッサに到達', icon: '🌌' },
+  { id: 'timeslip_1', title: '時空跳躍者', desc: '初めてタイムスリップを実行し次世代世界線へ突入', icon: '⏳' },
+  { id: 'photonic_era', title: '光速光子演算', desc: 'タイムスリップ後、光子ニューロモルフィックへ進化', icon: '💡' },
+  { id: 'timeslip_3', title: '多元宇宙の観測者', desc: 'タイムスリップを累計3回以上実行', icon: '🌀' },
   { id: 'millionaire', title: '演算長者', desc: '累計獲得資金が $1,000,000 を突破', icon: '👑' },
+  { id: 'billionaire', title: 'ギガ富豪', desc: '累計獲得資金が $1,000,000,000 を突破', icon: '💎' },
 ];
 
 export const StatsModal: React.FC<StatsModalProps> = ({
@@ -34,6 +50,7 @@ export const StatsModal: React.FC<StatsModalProps> = ({
   onClose,
   stats,
   currentArch,
+  timeSlipCount,
   formatNumber,
   unlockedAchievements,
 }) => {
@@ -46,6 +63,8 @@ export const StatsModal: React.FC<StatsModalProps> = ({
     const s = secs % 60;
     return `${h}時間 ${m}分 ${s}秒`;
   };
+
+  const timeSlipMult = getTimeSlipMultiplier(timeSlipCount);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in font-mono">
@@ -62,6 +81,29 @@ export const StatsModal: React.FC<StatsModalProps> = ({
           >
             <X className="w-5 h-5" />
           </button>
+        </div>
+
+        {/* Time Slip / Timeline Banner */}
+        <div className="bg-gradient-to-r from-purple-950/40 via-pink-950/30 to-purple-950/40 border border-purple-500/40 rounded-xl p-3.5 mb-5 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-lg bg-purple-900/50 text-purple-300 border border-purple-500/30">
+              <Hourglass className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="text-xs text-purple-300 font-bold block">
+                第 {timeSlipCount + 1} 世代 世界線タイムライン
+              </span>
+              <span className="text-[11px] text-gray-400">
+                跳躍実行回数: {stats.timesTimeSlipped || 0} 回
+              </span>
+            </div>
+          </div>
+          <div className="text-right">
+            <span className="text-[10px] text-purple-300 block">恒久全演算倍率</span>
+            <span className="text-base font-black text-amber-400">
+              x{timeSlipMult.toLocaleString()}
+            </span>
+          </div>
         </div>
 
         {/* Lifetime Stats */}

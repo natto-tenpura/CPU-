@@ -122,7 +122,19 @@ export const CpuVisualizer: React.FC<CpuVisualizerProps> = ({
               />
 
               <span className="text-[10px] font-mono font-bold mt-1 text-gray-300 relative z-10 tracking-wider">
-                {arch.id === 6 ? 'QUANTUM' : arch.id >= 4 ? '64-BIT' : arch.id >= 3 ? '32-BIT' : 'CISC'}
+                {arch.id >= 11
+                  ? 'OMEGA-Ω'
+                  : arch.id >= 9
+                  ? 'OMNIVERSE'
+                  : arch.id >= 7
+                  ? 'PHOTONIC'
+                  : arch.id === 6
+                  ? 'QUANTUM'
+                  : arch.id >= 4
+                  ? '64-BIT'
+                  : arch.id >= 3
+                  ? '32-BIT'
+                  : 'CISC'}
               </span>
             </div>
 

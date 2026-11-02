@@ -9,11 +9,11 @@
  * 5. Export / Import functionality (JSON & Base64 save codes) for external backup.
  */
 
-import { GameSaveData } from './types.ts';
+import { GameSaveData, getMaxArchitectureLevel } from './types.ts';
 
 export const PRIMARY_SAVE_KEY = 'cpu_evolver_save_v1';
 export const BACKUP_SAVE_KEY = 'cpu_evolver_save_backup_v1';
-export const SAVE_FORMAT_VERSION = 1;
+export const SAVE_FORMAT_VERSION = 2;
 
 export const DEFAULT_SAVE_DATA: GameSaveData = {
   version: SAVE_FORMAT_VERSION,
@@ -22,6 +22,7 @@ export const DEFAULT_SAVE_DATA: GameSaveData = {
   cores: 1,
   clickMultiplier: 1,
   architectureLevel: 0,
+  timeSlipCount: 0,
   costs: {
     clock: 10,
     core: 50,
@@ -34,6 +35,7 @@ export const DEFAULT_SAVE_DATA: GameSaveData = {
     lastSavedTimestamp: Date.now(),
     offlineEarningsClaimedTotal: 0,
     timesUpgraded: 0,
+    timesTimeSlipped: 0,
   },
   settings: {
     soundEnabled: true,
@@ -53,13 +55,17 @@ function sanitizeSaveData(data: Partial<GameSaveData>): GameSaveData {
     return Math.max(0, val);
   };
 
+  const timeSlipCount = sanitizeNum(data.timeSlipCount, 0);
+  const maxAllowedArch = getMaxArchitectureLevel(timeSlipCount);
+
   return {
     version: SAVE_FORMAT_VERSION,
     money: sanitizeNum(data.money, DEFAULT_SAVE_DATA.money),
     clockKhz: Math.max(740, sanitizeNum(data.clockKhz, DEFAULT_SAVE_DATA.clockKhz)),
     cores: Math.max(1, sanitizeNum(data.cores, DEFAULT_SAVE_DATA.cores)),
     clickMultiplier: Math.max(1, sanitizeNum(data.clickMultiplier, DEFAULT_SAVE_DATA.clickMultiplier)),
-    architectureLevel: Math.min(6, Math.max(0, Math.floor(sanitizeNum(data.architectureLevel, 0)))),
+    architectureLevel: Math.min(maxAllowedArch, Math.max(0, Math.floor(sanitizeNum(data.architectureLevel, 0)))),
+    timeSlipCount,
     costs: {
       clock: Math.max(10, sanitizeNum(data.costs?.clock, DEFAULT_SAVE_DATA.costs.clock)),
       core: Math.max(50, sanitizeNum(data.costs?.core, DEFAULT_SAVE_DATA.costs.core)),
@@ -72,6 +78,7 @@ function sanitizeSaveData(data: Partial<GameSaveData>): GameSaveData {
       lastSavedTimestamp: sanitizeNum(data.stats?.lastSavedTimestamp, Date.now()),
       offlineEarningsClaimedTotal: sanitizeNum(data.stats?.offlineEarningsClaimedTotal, 0),
       timesUpgraded: sanitizeNum(data.stats?.timesUpgraded, 0),
+      timesTimeSlipped: sanitizeNum(data.stats?.timesTimeSlipped, 0),
     },
     settings: {
       soundEnabled: data.settings?.soundEnabled !== false,

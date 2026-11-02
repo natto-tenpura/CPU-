@@ -161,4 +161,34 @@ export const playSound = {
       // Audio error suppressed
     }
   },
+
+  timeSlip: (enabled = true) => {
+    if (!enabled) return;
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    try {
+      const now = ctx.currentTime;
+      // Deep sub-bass cosmic drop and sweeping resonance
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(220, now);
+      osc.frequency.exponentialRampToValueAtTime(55, now + 0.4);
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.9);
+
+      gain.gain.setValueAtTime(0.08, now);
+      gain.gain.linearRampToValueAtTime(0.12, now + 0.5);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 1.1);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 1.15);
+    } catch {
+      // Audio error suppressed
+    }
+  },
 };
