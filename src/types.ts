@@ -170,20 +170,28 @@ export function getMaxArchitectureLevel(timeSlipCount: number): number {
 }
 
 /**
- * Time Slip cost increases progressively with each Time Slip performed.
- * Time Slip 0: $100,000,000 ($100M)
- * Time Slip 1: $2,000,000,000 ($2B)
- * Time Slip 2: $50,000,000,000 ($50B)
- * Time Slip 3: $1,500,000,000,000 ($1.5T)
- * etc.
+ * Time Slip cost increases drastically with each Time Slip performed:
+ * Time Slip 0 (1回目): $100M ($100,000,000)
+ * Time Slip 1 (2回目): $50B  ($50,000,000,000) -> 500x increase
+ * Time Slip 2 (3回目): $200T ($200,000,000,000,000) -> 4,000x increase
+ * Time Slip 3 (4回目): $2Qi  ($2,000,000,000,000,000,000) -> 10,000x increase
+ * Time Slip 4 (5回目): $50Sx ($50,000,000,000,000,000,000,000) -> 25,000x increase
  */
 export function getTimeSlipCost(timeSlipCount: number): number {
-  const baseCost = 100000000;
-  const multipliers = [1, 20, 500, 15000, 500000, 20000000];
-  if (timeSlipCount < multipliers.length) {
-    return baseCost * multipliers[timeSlipCount];
+  const baseCost = 100000000; // $100M
+  const growthSteps = [
+    1,                      // 100M
+    500,                    // 50B (500x)
+    2000000,                // 200T (4,000x of prev)
+    20000000000,            // 2Qi / 2 Quintillion (10,000x of prev)
+    500000000000000,        // 50Sx / 50 Sextillion (25,000x of prev)
+    50000000000000000000,   // 5Sp / 5 Septillion (100,000x of prev)
+  ];
+  if (timeSlipCount < growthSteps.length) {
+    return baseCost * growthSteps[timeSlipCount];
   }
-  return baseCost * multipliers[multipliers.length - 1] * Math.pow(25, timeSlipCount - multipliers.length + 1);
+  const lastGrowth = growthSteps[growthSteps.length - 1];
+  return baseCost * lastGrowth * Math.pow(10000, timeSlipCount - growthSteps.length + 1);
 }
 
 /**
