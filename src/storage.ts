@@ -40,6 +40,7 @@ export const DEFAULT_SAVE_DATA: GameSaveData = {
   settings: {
     soundEnabled: true,
     autoSaveIntervalSec: 2,
+    autoUpgradeEnabled: true,
   },
   unlockedAchievements: [],
 };
@@ -83,6 +84,7 @@ function sanitizeSaveData(data: Partial<GameSaveData>): GameSaveData {
     settings: {
       soundEnabled: data.settings?.soundEnabled !== false,
       autoSaveIntervalSec: sanitizeNum(data.settings?.autoSaveIntervalSec, 2),
+      autoUpgradeEnabled: data.settings?.autoUpgradeEnabled !== false,
     },
     unlockedAchievements: Array.isArray(data.unlockedAchievements) ? data.unlockedAchievements : [],
   };

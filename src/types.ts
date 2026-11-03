@@ -206,9 +206,12 @@ export interface GameStats {
   timesTimeSlipped: number;
 }
 
+export const AUTO_UPGRADE_UNLOCK_TIMELINE = 30; // 第30世代世界線で自動アップグレード解放
+
 export interface GameSettings {
   soundEnabled: boolean;
   autoSaveIntervalSec: number;
+  autoUpgradeEnabled: boolean;
 }
 
 export interface GameSaveData {

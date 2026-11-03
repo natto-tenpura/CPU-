@@ -22,6 +22,8 @@ import {
   Hourglass,
   Sparkles,
   AlertCircle,
+  Lock,
+  Bot,
 } from 'lucide-react';
 
 import {
@@ -31,6 +33,7 @@ import {
   getMaxArchitectureLevel,
   getTimeSlipCost,
   getTimeSlipMultiplier,
+  AUTO_UPGRADE_UNLOCK_TIMELINE,
 } from './types.ts';
 import {
   loadGameData,
@@ -106,6 +109,9 @@ export default function App() {
   const timeSlipCount = gameState.timeSlipCount || 0;
   const timeSlipMult = getTimeSlipMultiplier(timeSlipCount);
   const maxAllowedArch = getMaxArchitectureLevel(timeSlipCount);
+  const currentTimeline = timeSlipCount + 1;
+  const isAutoUpgradeUnlocked = currentTimeline >= AUTO_UPGRADE_UNLOCK_TIMELINE;
+  const isAutoUpgradeEnabled = isAutoUpgradeUnlocked && gameState.settings.autoUpgradeEnabled !== false;
 
   const currentArch: Architecture = getArchitecture(gameState.architectureLevel);
   const isMaxEvolution = gameState.architectureLevel >= maxAllowedArch;
@@ -144,6 +150,7 @@ export default function App() {
     if (currentData.architectureLevel >= 7) unlocked.add('photonic_era');
     if ((currentData.timeSlipCount || 0) >= 1) unlocked.add('timeslip_1');
     if ((currentData.timeSlipCount || 0) >= 3) unlocked.add('timeslip_3');
+    if ((currentData.timeSlipCount || 0) >= 29) unlocked.add('timeslip_30');
     if (currentData.stats.totalMoneyEarned >= 1000000) unlocked.add('millionaire');
     if (currentData.stats.totalMoneyEarned >= 1000000000) unlocked.add('billionaire');
     return Array.from(unlocked);
@@ -219,24 +226,96 @@ export default function App() {
       const flops = (current.clockKhz / 10) * current.cores * arch.mult * tsMult;
       const perTick = flops / 10;
 
-      if (perTick > 0) {
+      const currentTimeline = (current.timeSlipCount || 0) + 1;
+      const isAutoUpgradeUnlocked = currentTimeline >= AUTO_UPGRADE_UNLOCK_TIMELINE;
+      const isAutoUpgradeEnabled = isAutoUpgradeUnlocked && current.settings.autoUpgradeEnabled !== false;
+
+      if (perTick > 0 || isAutoUpgradeEnabled) {
         setGameState((prev) => {
-          const newMoney = prev.money + perTick;
+          let newMoney = prev.money + perTick;
           const newTotal = prev.stats.totalMoneyEarned + perTick;
-          return {
+          let clockKhz = prev.clockKhz;
+          let cores = prev.cores;
+          let clickMultiplier = prev.clickMultiplier;
+          let architectureLevel = prev.architectureLevel;
+          const costs = { ...prev.costs };
+          let timesUpgraded = prev.stats.timesUpgraded;
+          let didUpgrade = false;
+
+          const timeline = (prev.timeSlipCount || 0) + 1;
+          const canAutoUpgrade =
+            timeline >= AUTO_UPGRADE_UNLOCK_TIMELINE && prev.settings.autoUpgradeEnabled !== false;
+
+          if (canAutoUpgrade) {
+            const maxArch = getMaxArchitectureLevel(prev.timeSlipCount || 0);
+
+            // Purchase up to 15 cheapest upgrades per tick while affordable
+            for (let i = 0; i < 15; i++) {
+              const candidates: { type: 'clock' | 'core' | 'cache' | 'evolution'; cost: number }[] = [
+                { type: 'clock', cost: costs.clock },
+                { type: 'core', cost: costs.core },
+                { type: 'cache', cost: costs.cache },
+              ];
+
+              if (architectureLevel < maxArch) {
+                candidates.push({
+                  type: 'evolution',
+                  cost: getArchitecture(architectureLevel).cost,
+                });
+              }
+
+              candidates.sort((a, b) => a.cost - b.cost);
+              const cheapest = candidates[0];
+
+              if (!cheapest || newMoney < cheapest.cost) {
+                break;
+              }
+
+              newMoney -= cheapest.cost;
+              timesUpgraded++;
+              didUpgrade = true;
+
+              if (cheapest.type === 'clock') {
+                clockKhz *= 1.25;
+                costs.clock = Math.floor(costs.clock * 1.5);
+              } else if (cheapest.type === 'core') {
+                cores += 1;
+                costs.core = Math.floor(costs.core * 1.8);
+              } else if (cheapest.type === 'cache') {
+                clickMultiplier *= 2;
+                costs.cache = Math.floor(costs.cache * 2.5);
+              } else if (cheapest.type === 'evolution') {
+                architectureLevel += 1;
+              }
+            }
+          }
+
+          const updated: GameSaveData = {
             ...prev,
             money: newMoney,
+            clockKhz,
+            cores,
+            clickMultiplier,
+            architectureLevel,
+            costs,
             stats: {
               ...prev.stats,
               totalMoneyEarned: newTotal,
+              timesUpgraded,
             },
           };
+
+          if (didUpgrade) {
+            updated.unlockedAchievements = checkAchievements(updated);
+          }
+
+          return updated;
         });
       }
     }, 100);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [checkAchievements]);
 
   // Periodic Auto-save timer (every 2 seconds)
   useEffect(() => {
@@ -471,6 +550,30 @@ export default function App() {
     });
   };
 
+  // Toggle Auto Upgrade
+  const toggleAutoUpgrade = () => {
+    setGameState((prev) => {
+      const nextVal = prev.settings.autoUpgradeEnabled === false ? true : false;
+      const updated: GameSaveData = {
+        ...prev,
+        settings: {
+          ...prev.settings,
+          autoUpgradeEnabled: nextVal,
+        },
+      };
+      executeSave(updated);
+      return updated;
+    });
+
+    const willBeEnabled = gameState.settings.autoUpgradeEnabled === false;
+    setSaveNotice(
+      willBeEnabled
+        ? '🤖 自動アップグレード（最安順購入）をONにしました'
+        : '自動アップグレードをOFFにしました'
+    );
+    setTimeout(() => setSaveNotice(null), 2500);
+  };
+
   // Reset Game
   const handleResetGame = () => {
     clearAllSaveData();
@@ -666,12 +769,47 @@ export default function App() {
 
         {/* Upgrades & Evolution Section */}
         <div className="mb-6">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-[#58a6ff]" />
               強化・アップグレード
             </h2>
-            <span className="text-xs text-gray-500">自動セーブ連動</span>
+
+            {/* Auto Upgrade Toggle / Lock Indicator */}
+            {isAutoUpgradeUnlocked ? (
+              <button
+                onClick={toggleAutoUpgrade}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                  isAutoUpgradeEnabled
+                    ? 'bg-emerald-950/90 border-emerald-500 text-emerald-300 shadow-lg shadow-emerald-950/40 hover:bg-emerald-900/60'
+                    : 'bg-[#21262d] border-[#30363d] text-gray-400 hover:text-gray-200 hover:border-gray-600'
+                }`}
+                title="安いアップグレードから自動で購入する機能のON/OFF切り替え"
+              >
+                <Bot className="w-3.5 h-3.5 text-emerald-400" />
+                <span>自動購入(最安順):</span>
+                <span
+                  className={`px-1.5 py-0.2 rounded text-[10px] font-black tracking-wider ${
+                    isAutoUpgradeEnabled
+                      ? 'bg-emerald-500 text-black'
+                      : 'bg-gray-700 text-gray-300'
+                  }`}
+                >
+                  {isAutoUpgradeEnabled ? 'ON' : 'OFF'}
+                </span>
+              </button>
+            ) : (
+              <div
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#161b22] border border-gray-800 text-[11px] text-gray-400"
+                title="第30世代世界線に到達すると、安いものから順に自動購入する機能が解放されます"
+              >
+                <Lock className="w-3 h-3 text-gray-500" />
+                <span>自動購入: 第30世代で解放</span>
+                <span className="text-[10px] text-gray-500 hidden sm:inline">
+                  (現在: 第{currentTimeline}世代)
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="grid gap-2.5">

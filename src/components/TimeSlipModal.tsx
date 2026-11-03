@@ -9,6 +9,7 @@ import {
   X,
   ChevronRight,
   ShieldAlert,
+  Bot,
 } from 'lucide-react';
 import {
   Architecture,
@@ -186,6 +187,21 @@ export const TimeSlipModal: React.FC<TimeSlipModalProps> = ({
                   </span>
                 </div>
               </div>
+
+              {/* Timeline 30 Bonus (if reaching or beyond 30) */}
+              {nextTimelineNum >= 30 && (
+                <div className="flex items-start gap-2 bg-emerald-950/40 p-2.5 rounded-lg border border-emerald-500/40 text-[11px]">
+                  <Bot className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />
+                  <div>
+                    <span className="text-emerald-300 font-bold block">
+                      🤖 第30世代世界線特典: 自動アップグレード解放！
+                    </span>
+                    <span className="text-gray-300">
+                      最も安い強化から順に自動購入するオートメーション機能が解放されます（ON/OFF切替可能）。
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* Escalating Future Cost Notice */}
               <div className="flex items-start gap-2 bg-blue-950/20 p-2.5 rounded-lg border border-blue-500/20 text-[11px] text-gray-400">

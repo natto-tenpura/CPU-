@@ -41,6 +41,7 @@ const ALL_ACHIEVEMENTS: AchievementDef[] = [
   { id: 'timeslip_1', title: '時空跳躍者', desc: '初めてタイムスリップを実行し次世代世界線へ突入', icon: '⏳' },
   { id: 'photonic_era', title: '光速光子演算', desc: 'タイムスリップ後、光子ニューロモルフィックへ進化', icon: '💡' },
   { id: 'timeslip_3', title: '多元宇宙の観測者', desc: 'タイムスリップを累計3回以上実行', icon: '🌀' },
+  { id: 'timeslip_30', title: '全自動演算の境地', desc: '第30世代世界線に到達し最安自動アップグレードを解放', icon: '🤖' },
   { id: 'millionaire', title: '演算長者', desc: '累計獲得資金が $1,000,000 を突破', icon: '👑' },
   { id: 'billionaire', title: 'ギガ富豪', desc: '累計獲得資金が $1,000,000,000 を突破', icon: '💎' },
 ];
