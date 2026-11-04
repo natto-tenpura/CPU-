@@ -10,6 +10,7 @@ import {
   ChevronRight,
   ShieldAlert,
   Bot,
+  Server,
 } from 'lucide-react';
 import {
   Architecture,
@@ -234,6 +235,21 @@ export const TimeSlipModal: React.FC<TimeSlipModalProps> = ({
                     </span>
                     <span className="text-gray-300">
                       最も安い強化から順に自動購入するオートメーション機能が解放されます（ON/OFF切替可能）。
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Timeline 90 Multi-Server Bonus */}
+              {nextTimelineNum > 90 && (
+                <div className="flex items-start gap-2 bg-cyan-950/40 p-2.5 rounded-lg border border-cyan-500/40 text-[11px]">
+                  <Server className="w-4 h-4 text-cyan-400 mt-0.5 shrink-0" />
+                  <div>
+                    <span className="text-cyan-300 font-bold block">
+                      🖥️ 第90世代世界線突破特典: 異界サーバー増設解放！
+                    </span>
+                    <span className="text-gray-300">
+                      別のサーバーを開設して最初からスタート可能！他サーバーで育てたCPUはすべて保管され、いつでも切替可能です。
                     </span>
                   </div>
                 </div>

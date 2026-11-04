@@ -25,17 +25,21 @@ import {
   Lock,
   Bot,
   RotateCcw,
+  Server,
+  Layers,
 } from 'lucide-react';
 
 import {
   Architecture,
   GameSaveData,
+  CpuServer,
   getArchitecture,
   getMaxArchitectureLevel,
   getTimeSlipCostTiered,
   getTimeSlipMultiplier,
   AUTO_UPGRADE_UNLOCK_TIMELINE,
   SKIP_EXPLANATION_TIMELINE,
+  MULTI_SERVER_UNLOCK_TIMELINE,
   TieredAmount,
   normalizeTieredAmount,
   compareAmounts,
@@ -60,6 +64,7 @@ import { SaveManagerModal } from './components/SaveManagerModal.tsx';
 import { StatsModal } from './components/StatsModal.tsx';
 import { TimeSlipModal } from './components/TimeSlipModal.tsx';
 import { ResetConfirmModal } from './components/ResetConfirmModal.tsx';
+import { ServerClusterModal } from './components/ServerClusterModal.tsx';
 
 interface FloatingGain {
   id: number;
@@ -89,6 +94,7 @@ export default function App() {
   const [isStatsOpen, setIsStatsOpen] = useState(false);
   const [isTimeSlipOpen, setIsTimeSlipOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [isServerClusterOpen, setIsServerClusterOpen] = useState(false);
 
   // Transient UI states
   const [isTimeSlipping, setIsTimeSlipping] = useState(false);
@@ -131,6 +137,41 @@ export default function App() {
   const isAutoUpgradeEnabled = isAutoUpgradeUnlocked && gameState.settings.autoUpgradeEnabled !== false;
   const isSkipExplanation = currentTimeline >= SKIP_EXPLANATION_TIMELINE;
 
+  // Multi-server cluster derivations
+  const servers: CpuServer[] =
+    gameState.servers && gameState.servers.length > 0
+      ? gameState.servers
+      : [
+          {
+            id: gameState.activeServerId || 'server-1',
+            name: 'サーバー #1 (地球原初メインフレーム)',
+            createdAt: gameState.stats.gameStartTime || Date.now(),
+            money: gameState.money,
+            moneyTier: gameState.moneyTier || 0,
+            currencyTier: gameState.currencyTier || 0,
+            clockKhz: gameState.clockKhz,
+            cores: gameState.cores,
+            clickMultiplier: gameState.clickMultiplier,
+            architectureLevel: gameState.architectureLevel,
+            timeSlipCount: gameState.timeSlipCount || 0,
+            costs: { ...gameState.costs },
+            stats: { ...gameState.stats },
+          },
+        ];
+  const activeServerId = gameState.activeServerId || servers[0].id;
+  const activeServer = servers.find((s) => s.id === activeServerId) || servers[0];
+
+  const maxTimelineReached = Math.max(
+    currentTimeline,
+    gameState.maxTimelineReached || 0,
+    ...servers.map((s) => (s.timeSlipCount || 0) + 1)
+  );
+
+  // Exceeding 90th generation timeline unlocks multi-server
+  const isServerUnlockAvailable = maxTimelineReached > MULTI_SERVER_UNLOCK_TIMELINE;
+  const standbyServersCount = Math.max(0, servers.length - 1);
+  const clusterBonusMult = 1 + standbyServersCount * 0.1;
+
   const currentArch: Architecture = getArchitecture(gameState.architectureLevel);
   const isMaxEvolution = gameState.architectureLevel >= maxAllowedArch;
   const nextArch: Architecture | undefined = !isMaxEvolution
@@ -151,19 +192,23 @@ export default function App() {
     Math.max(0, gameState.architectureLevel - currentGenBaseLevel)
   );
 
-  // FLOPS (演算能力 with Time Slip permanent multiplier) as TieredAmount
-  const flopsTiered = getFlopsTiered(
+  // FLOPS (演算能力 with Time Slip & Cluster multipliers) as TieredAmount
+  const rawFlopsTiered = getFlopsTiered(
     gameState.clockKhz,
     gameState.cores,
     currentArch.mult,
     timeSlipCount,
     currentArch.multTier || 0
   );
+  const flopsTiered: TieredAmount = normalizeTieredAmount({
+    value: rawFlopsTiered.value * clusterBonusMult,
+    tier: rawFlopsTiered.tier,
+  });
 
   const currentCurrencyTier = Math.max(gameState.currencyTier || 0, gameState.moneyTier || 0);
 
   // Click gain with Time Slip permanent multiplier and currency tier scaling (10^100x per unit tier)
-  const clickGainTiered = getClickGainTiered(
+  const rawClickGainTiered = getClickGainTiered(
     gameState.clockKhz,
     gameState.clickMultiplier,
     currentArch.mult,
@@ -171,6 +216,10 @@ export default function App() {
     currentCurrencyTier,
     currentArch.multTier || 0
   );
+  const clickGainTiered: TieredAmount = normalizeTieredAmount({
+    value: rawClickGainTiered.value * clusterBonusMult,
+    tier: rawClickGainTiered.tier,
+  });
 
   // Check achievements
   const checkAchievements = useCallback((currentData: GameSaveData): string[] => {
@@ -199,9 +248,51 @@ export default function App() {
     return Array.from(unlocked);
   }, []);
 
-  // Save execution
+  // Save execution with server state synchronization
   const executeSave = useCallback((dataToSave = gameStateRef.current) => {
-    saveGameData(dataToSave);
+    const currentServers = dataToSave.servers && dataToSave.servers.length > 0 ? [...dataToSave.servers] : [];
+    const activeId = dataToSave.activeServerId || 'server-1';
+    const activeIdx = currentServers.findIndex((s) => s.id === activeId);
+
+    const syncedActive: CpuServer = {
+      id: activeId,
+      name: activeIdx >= 0 ? currentServers[activeIdx].name : 'サーバー #1 (地球原初メインフレーム)',
+      createdAt: activeIdx >= 0 ? currentServers[activeIdx].createdAt : (dataToSave.stats?.gameStartTime || Date.now()),
+      money: dataToSave.money,
+      moneyTier: dataToSave.moneyTier || 0,
+      currencyTier: dataToSave.currencyTier || 0,
+      clockKhz: dataToSave.clockKhz,
+      cores: dataToSave.cores,
+      clickMultiplier: dataToSave.clickMultiplier,
+      architectureLevel: dataToSave.architectureLevel,
+      timeSlipCount: dataToSave.timeSlipCount || 0,
+      costs: { ...dataToSave.costs },
+      stats: { ...dataToSave.stats },
+    };
+
+    if (activeIdx >= 0) {
+      currentServers[activeIdx] = syncedActive;
+    } else {
+      currentServers.unshift(syncedActive);
+    }
+
+    const highestInServers = currentServers.reduce(
+      (acc, s) => Math.max(acc, (s.timeSlipCount || 0) + 1),
+      (dataToSave.timeSlipCount || 0) + 1
+    );
+
+    const finalData: GameSaveData = {
+      ...dataToSave,
+      activeServerId: activeId,
+      servers: currentServers,
+      maxTimelineReached: Math.max(
+        dataToSave.maxTimelineReached || 0,
+        (dataToSave.timeSlipCount || 0) + 1,
+        highestInServers
+      ),
+    };
+
+    saveGameData(finalData);
     setLastSavedTime(Date.now());
     setSaveIndicatorActive(true);
     setTimeout(() => setSaveIndicatorActive(false), 1200);
@@ -801,23 +892,273 @@ export default function App() {
     setTimeout(() => setSaveNotice(null), 2500);
   };
 
-  // Reset Game
-  const handleResetGame = () => {
-    clearAllSaveData();
-    const freshData: GameSaveData = {
-      ...DEFAULT_SAVE_DATA,
-      stats: {
-        ...DEFAULT_SAVE_DATA.stats,
-        gameStartTime: Date.now(),
-        lastSavedTimestamp: Date.now(),
-      },
-    };
-    setGameState(freshData);
-    saveGameData(freshData);
-    playSound.upgrade(gameState.settings.soundEnabled);
-    setIsResetModalOpen(false);
-    setIsSaveManagerOpen(false);
-    setSaveNotice('全データを初期化し、初期状態にリセットしました。');
+  // Switch to another server (keeps all CPUs preserved!)
+  const handleSwitchServer = (targetServerId: string) => {
+    if (targetServerId === activeServerId) return;
+    playSound.serverSwitch(gameState.settings.soundEnabled);
+
+    setGameState((prev) => {
+      const currentServers = prev.servers && prev.servers.length > 0 ? [...prev.servers] : [...servers];
+      const activeIdx = currentServers.findIndex((s) => s.id === (prev.activeServerId || 'server-1'));
+
+      // Snapshot current server CPU state before switching
+      const currentActiveSnapshot: CpuServer = {
+        id: prev.activeServerId || 'server-1',
+        name: activeIdx >= 0 ? currentServers[activeIdx].name : 'サーバー #1 (地球原初メインフレーム)',
+        createdAt: activeIdx >= 0 ? currentServers[activeIdx].createdAt : (prev.stats?.gameStartTime || Date.now()),
+        money: prev.money,
+        moneyTier: prev.moneyTier || 0,
+        currencyTier: prev.currencyTier || 0,
+        clockKhz: prev.clockKhz,
+        cores: prev.cores,
+        clickMultiplier: prev.clickMultiplier,
+        architectureLevel: prev.architectureLevel,
+        timeSlipCount: prev.timeSlipCount || 0,
+        costs: { ...prev.costs },
+        stats: { ...prev.stats },
+      };
+
+      if (activeIdx >= 0) {
+        currentServers[activeIdx] = currentActiveSnapshot;
+      } else {
+        currentServers.unshift(currentActiveSnapshot);
+      }
+
+      const target = currentServers.find((s) => s.id === targetServerId);
+      if (!target) return prev;
+
+      const highestInServers = currentServers.reduce(
+        (acc, s) => Math.max(acc, (s.timeSlipCount || 0) + 1),
+        (target.timeSlipCount || 0) + 1
+      );
+
+      const nextState: GameSaveData = {
+        ...prev,
+        activeServerId: target.id,
+        money: target.money,
+        moneyTier: target.moneyTier || 0,
+        currencyTier: target.currencyTier || 0,
+        clockKhz: target.clockKhz,
+        cores: target.cores,
+        clickMultiplier: target.clickMultiplier,
+        architectureLevel: target.architectureLevel,
+        timeSlipCount: target.timeSlipCount,
+        costs: { ...target.costs },
+        stats: target.stats ? { ...target.stats } : { ...prev.stats },
+        servers: currentServers,
+        maxTimelineReached: Math.max(prev.maxTimelineReached || 0, (target.timeSlipCount || 0) + 1, highestInServers),
+      };
+
+      executeSave(nextState);
+      return nextState;
+    });
+
+    const targetServer = servers.find((s) => s.id === targetServerId);
+    const targetArch = getArchitecture(targetServer?.architectureLevel || 0);
+    setSaveNotice(
+      `サーバー「${targetServer?.name || targetServerId}」に切替完了！（CPU: ${targetArch.name}）他のCPUは保管されています。`
+    );
+    setTimeout(() => setSaveNotice(null), 4000);
+  };
+
+  // Deploy and start from scratch on a new server (keeps other CPUs preserved!)
+  const handleCreateServer = (serverName: string) => {
+    playSound.serverCreate(gameState.settings.soundEnabled);
+
+    try {
+      confetti({
+        particleCount: 140,
+        spread: 90,
+        origin: { y: 0.5 },
+        colors: ['#06b6d4', '#3b82f6', '#a855f7', '#fbbf24', '#ffffff'],
+      });
+    } catch {}
+
+    setGameState((prev) => {
+      const currentServers = prev.servers && prev.servers.length > 0 ? [...prev.servers] : [...servers];
+      const activeIdx = currentServers.findIndex((s) => s.id === (prev.activeServerId || 'server-1'));
+
+      // Snapshot current server CPU state before switching to new server
+      const currentActiveSnapshot: CpuServer = {
+        id: prev.activeServerId || 'server-1',
+        name: activeIdx >= 0 ? currentServers[activeIdx].name : 'サーバー #1 (地球原初メインフレーム)',
+        createdAt: activeIdx >= 0 ? currentServers[activeIdx].createdAt : (prev.stats?.gameStartTime || Date.now()),
+        money: prev.money,
+        moneyTier: prev.moneyTier || 0,
+        currencyTier: prev.currencyTier || 0,
+        clockKhz: prev.clockKhz,
+        cores: prev.cores,
+        clickMultiplier: prev.clickMultiplier,
+        architectureLevel: prev.architectureLevel,
+        timeSlipCount: prev.timeSlipCount || 0,
+        costs: { ...prev.costs },
+        stats: { ...prev.stats },
+      };
+
+      if (activeIdx >= 0) {
+        currentServers[activeIdx] = currentActiveSnapshot;
+      } else {
+        currentServers.unshift(currentActiveSnapshot);
+      }
+
+      const newId = `server-${Date.now()}`;
+      const newServer: CpuServer = {
+        id: newId,
+        name: serverName,
+        createdAt: Date.now(),
+        money: 0,
+        moneyTier: 0,
+        currencyTier: 0,
+        clockKhz: 740,
+        cores: 1,
+        clickMultiplier: 1,
+        architectureLevel: 0,
+        timeSlipCount: 0,
+        costs: {
+          clock: 10,
+          core: 50,
+          cache: 100,
+          clockTier: 0,
+          coreTier: 0,
+          cacheTier: 0,
+        },
+        stats: {
+          totalMoneyEarned: 0,
+          totalMoneyTier: 0,
+          totalClicks: 0,
+          gameStartTime: Date.now(),
+          lastSavedTimestamp: Date.now(),
+          offlineEarningsClaimedTotal: 0,
+          offlineEarningsClaimedTier: 0,
+          timesUpgraded: 0,
+          timesTimeSlipped: 0,
+        },
+      };
+
+      const updatedServers = [...currentServers, newServer];
+      const nextState: GameSaveData = {
+        ...prev,
+        activeServerId: newId,
+        money: 0,
+        moneyTier: 0,
+        currencyTier: 0,
+        clockKhz: 740,
+        cores: 1,
+        clickMultiplier: 1,
+        architectureLevel: 0,
+        timeSlipCount: 0,
+        costs: { ...newServer.costs },
+        stats: { ...newServer.stats! },
+        servers: updatedServers,
+        maxTimelineReached: Math.max(prev.maxTimelineReached || 0, (prev.timeSlipCount || 0) + 1),
+      };
+
+      executeSave(nextState);
+      return nextState;
+    });
+
+    setSaveNotice(
+      `🚀 新サーバー「${serverName}」を稼働開始！初期状態から新スタート。前のCPUは安全に保管されています。`
+    );
+    setTimeout(() => setSaveNotice(null), 5000);
+  };
+
+  // Rename a server
+  const handleRenameServer = (serverId: string, newName: string) => {
+    setGameState((prev) => {
+      const currentServers = prev.servers ? [...prev.servers] : [...servers];
+      const idx = currentServers.findIndex((s) => s.id === serverId);
+      if (idx >= 0) {
+        currentServers[idx] = { ...currentServers[idx], name: newName };
+      }
+      const updated: GameSaveData = { ...prev, servers: currentServers };
+      executeSave(updated);
+      return updated;
+    });
+  };
+
+  // Reset Game: Support resetting only current active server (keeping other CPUs) or all servers
+  const handleResetGame = (resetAllServers: boolean = true) => {
+    if (resetAllServers || servers.length <= 1) {
+      clearAllSaveData();
+      const freshData: GameSaveData = {
+        ...DEFAULT_SAVE_DATA,
+        stats: {
+          ...DEFAULT_SAVE_DATA.stats,
+          gameStartTime: Date.now(),
+          lastSavedTimestamp: Date.now(),
+        },
+      };
+      setGameState(freshData);
+      saveGameData(freshData);
+      playSound.upgrade(gameState.settings.soundEnabled);
+      setIsResetModalOpen(false);
+      setIsSaveManagerOpen(false);
+      setSaveNotice('全データを初期化し、工場出荷時の初期状態にリセットしました。');
+    } else {
+      // Reset only current active server, keeping all other servers' CPUs preserved!
+      setGameState((prev) => {
+        const currentServers = prev.servers ? [...prev.servers] : [...servers];
+        const activeIdx = currentServers.findIndex((s) => s.id === (prev.activeServerId || 'server-1'));
+
+        const resetServer: CpuServer = {
+          id: prev.activeServerId || 'server-1',
+          name: activeIdx >= 0 ? currentServers[activeIdx].name : 'サーバー',
+          createdAt: Date.now(),
+          money: 0,
+          moneyTier: 0,
+          currencyTier: 0,
+          clockKhz: 740,
+          cores: 1,
+          clickMultiplier: 1,
+          architectureLevel: 0,
+          timeSlipCount: 0,
+          costs: {
+            clock: 10,
+            core: 50,
+            cache: 100,
+            clockTier: 0,
+            coreTier: 0,
+            cacheTier: 0,
+          },
+          stats: {
+            totalMoneyEarned: 0,
+            totalMoneyTier: 0,
+            totalClicks: 0,
+            gameStartTime: Date.now(),
+            lastSavedTimestamp: Date.now(),
+            offlineEarningsClaimedTotal: 0,
+            offlineEarningsClaimedTier: 0,
+            timesUpgraded: 0,
+            timesTimeSlipped: 0,
+          },
+        };
+
+        if (activeIdx >= 0) {
+          currentServers[activeIdx] = resetServer;
+        }
+
+        const updated: GameSaveData = {
+          ...prev,
+          money: 0,
+          moneyTier: 0,
+          currencyTier: 0,
+          clockKhz: 740,
+          cores: 1,
+          clickMultiplier: 1,
+          architectureLevel: 0,
+          timeSlipCount: 0,
+          costs: { ...resetServer.costs },
+          stats: { ...resetServer.stats! },
+          servers: currentServers,
+        };
+        executeSave(updated);
+        return updated;
+      });
+      playSound.upgrade(gameState.settings.soundEnabled);
+      setIsResetModalOpen(false);
+      setSaveNotice(`「${activeServer.name}」のCPUを初期化しました（他のサーバーのCPUはすべて維持されています）。`);
+    }
     setTimeout(() => setSaveNotice(null), 4000);
   };
 
@@ -888,6 +1229,26 @@ export default function App() {
             </span>
           </button>
 
+          {/* Multi-Server Cluster Button */}
+          <button
+            onClick={() => setIsServerClusterOpen(true)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
+              isServerUnlockAvailable
+                ? 'bg-cyan-950/80 border-cyan-400 text-cyan-200 shadow-md shadow-cyan-950/60 hover:bg-cyan-900/60'
+                : 'bg-[#161b22] border-[#30363d] text-gray-400 hover:border-gray-500 hover:text-gray-200'
+            }`}
+            title="サーバークラスタ管理・別サーバー切替（他のCPUは全て保持）"
+          >
+            <Server className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="font-bold truncate max-w-[80px] sm:max-w-[120px]">{activeServer.name}</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-300 font-bold border border-cyan-500/40">
+              {servers.length}台
+            </span>
+            {isServerUnlockAvailable && servers.length === 1 && (
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping shrink-0" />
+            )}
+          </button>
+
           {/* Multi-Tier Currency Badge (When >= 1e100) */}
           {gameState.moneyTier && gameState.moneyTier >= 1 ? (
             <div
@@ -942,7 +1303,7 @@ export default function App() {
         </div>
 
         {/* Header */}
-        <header className="text-center border-b-2 border-[#58a6ff] pb-4 mb-5">
+        <header className="text-center border-b-2 border-[#58a6ff] pb-4 mb-4">
           <div className="flex items-center justify-center gap-2 mb-1">
             <Cpu className="w-7 h-7 text-[#58a6ff]" />
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-wider text-white">
@@ -956,9 +1317,42 @@ export default function App() {
                 世界線 #{timeSlipCount + 1}
               </span>
             )}
+            <span className="text-[11px] px-2 py-0.5 rounded-md bg-cyan-950/70 border border-cyan-500/40 text-cyan-300 font-normal">
+              {activeServer.name}
+            </span>
           </div>
           <div className="text-xs text-[#8b949e] mt-0.5">製造プロセス: {currentArch.node}</div>
         </header>
+
+        {/* Multi-Server Cluster Promo Banner (Appears when >= 第91世代世界線 is unlocked) */}
+        {isServerUnlockAvailable && (
+          <div
+            onClick={() => setIsServerClusterOpen(true)}
+            className="mb-4 p-3 rounded-xl bg-gradient-to-r from-cyan-950/80 via-blue-950/60 to-purple-950/50 border border-cyan-500/60 shadow-lg cursor-pointer hover:border-cyan-400 transition-all group"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-cyan-900/60 text-cyan-300 border border-cyan-500/40 group-hover:scale-105 transition-transform shrink-0">
+                  <Server className="w-4 h-4 text-cyan-300 animate-pulse" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-bold text-cyan-200">
+                      第90世代世界線突破特典: 異界サーバー増設解放中！
+                    </span>
+                    <span className="text-[10px] px-2 py-0.2 rounded-full bg-cyan-900/90 text-cyan-200 border border-cyan-500/40">
+                      クラスタ稼働: {servers.length}台 ({servers.reduce((a, s) => a + (s.cores || 1), 0)} Cores)
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-300 mt-0.5 leading-relaxed">
+                    別のサーバーを開設して初期状態から新CPUを開発可能。他サーバーのCPUはすべて保持・保管されます。
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className="w-5 h-5 text-cyan-400 group-hover:translate-x-1 transition-transform shrink-0" />
+            </div>
+          </div>
+        )}
 
         {/* Interactive Die Visualizer Component */}
         <CpuVisualizer
@@ -1430,6 +1824,24 @@ export default function App() {
         onClose={() => setIsResetModalOpen(false)}
         onConfirmReset={handleResetGame}
         timeSlipCount={timeSlipCount}
+        currentServerName={activeServer.name}
+        serverCount={servers.length}
+      />
+
+      {/* Multi-Server Cluster Management Modal */}
+      <ServerClusterModal
+        isOpen={isServerClusterOpen}
+        onClose={() => setIsServerClusterOpen(false)}
+        activeServerId={activeServerId}
+        servers={servers}
+        maxTimelineReached={maxTimelineReached}
+        currentTimeline={currentTimeline}
+        isUnlocked={isServerUnlockAvailable}
+        onSwitchServer={handleSwitchServer}
+        onCreateServer={handleCreateServer}
+        onRenameServer={handleRenameServer}
+        formatNumber={formatNumber}
+        formatClock={formatClock}
       />
 
       {/* 1-Second Time Slip Cosmic Warp Overlay */}

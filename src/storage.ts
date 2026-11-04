@@ -50,6 +50,31 @@ export const DEFAULT_SAVE_DATA: GameSaveData = {
     autoUpgradeEnabled: true,
   },
   unlockedAchievements: [],
+  activeServerId: 'server-1',
+  servers: [
+    {
+      id: 'server-1',
+      name: 'サーバー #1 (地球原初メインフレーム)',
+      createdAt: Date.now(),
+      money: 0,
+      moneyTier: 0,
+      currencyTier: 0,
+      clockKhz: 740,
+      cores: 1,
+      clickMultiplier: 1,
+      architectureLevel: 0,
+      timeSlipCount: 0,
+      costs: {
+        clock: 10,
+        core: 50,
+        cache: 100,
+        clockTier: 0,
+        coreTier: 0,
+        cacheTier: 0,
+      },
+    },
+  ],
+  maxTimelineReached: 1,
 };
 
 /**
@@ -82,6 +107,112 @@ function sanitizeSaveData(data: Partial<GameSaveData>): GameSaveData {
 
   const currencyTier = Math.max(sanitizeNum(data.currencyTier, 0), moneyTier);
 
+  // Multi-server cluster state sanitization
+  const activeServerId = typeof data.activeServerId === 'string' && data.activeServerId ? data.activeServerId : 'server-1';
+
+  let rawServers: any[] = Array.isArray(data.servers) ? data.servers : [];
+  let sanitizedServers: import('./types.ts').CpuServer[] = [];
+
+  for (const s of rawServers) {
+    if (s && typeof s === 'object' && typeof s.id === 'string') {
+      const sTimeSlip = sanitizeNum(s.timeSlipCount, 0);
+      let sMoney = sanitizeNum(s.money, 0);
+      let sMoneyTier = sanitizeNum(s.moneyTier, 0);
+      while (sMoney >= 1e100) {
+        sMoney /= 1e100;
+        sMoneyTier += 1;
+      }
+      sanitizedServers.push({
+        id: s.id,
+        name: typeof s.name === 'string' && s.name ? s.name : `サーバー ${s.id}`,
+        createdAt: sanitizeNum(s.createdAt, Date.now()),
+        money: sMoney,
+        moneyTier: sMoneyTier,
+        currencyTier: Math.max(sanitizeNum(s.currencyTier, 0), sMoneyTier),
+        clockKhz: Math.max(740, sanitizeNum(s.clockKhz, 740)),
+        cores: Math.max(1, sanitizeNum(s.cores, 1)),
+        clickMultiplier: Math.max(1, sanitizeNum(s.clickMultiplier, 1)),
+        architectureLevel: Math.max(0, Math.floor(sanitizeNum(s.architectureLevel, 0))),
+        timeSlipCount: sTimeSlip,
+        costs: {
+          clock: Math.max(10, sanitizeNum(s.costs?.clock, 10)),
+          core: Math.max(50, sanitizeNum(s.costs?.core, 50)),
+          cache: Math.max(100, sanitizeNum(s.costs?.cache, 100)),
+          clockTier: sanitizeNum(s.costs?.clockTier, 0),
+          coreTier: sanitizeNum(s.costs?.coreTier, 0),
+          cacheTier: sanitizeNum(s.costs?.cacheTier, 0),
+        },
+        stats: s.stats,
+      });
+    }
+  }
+
+  // If no servers existed yet or active server is missing, ensure active server is recorded
+  const activeServerIdx = sanitizedServers.findIndex((s) => s.id === activeServerId);
+  const activeCosts = {
+    clock: Math.max(10, sanitizeNum(data.costs?.clock, DEFAULT_SAVE_DATA.costs.clock)),
+    core: Math.max(50, sanitizeNum(data.costs?.core, DEFAULT_SAVE_DATA.costs.core)),
+    cache: Math.max(100, sanitizeNum(data.costs?.cache, DEFAULT_SAVE_DATA.costs.cache)),
+    clockTier: sanitizeNum(data.costs?.clockTier, 0),
+    coreTier: sanitizeNum(data.costs?.coreTier, 0),
+    cacheTier: sanitizeNum(data.costs?.cacheTier, 0),
+  };
+  const activeStats = {
+    totalMoneyEarned: totalMoney,
+    totalMoneyTier,
+    totalClicks: sanitizeNum(data.stats?.totalClicks, 0),
+    gameStartTime: sanitizeNum(data.stats?.gameStartTime, Date.now()),
+    lastSavedTimestamp: sanitizeNum(data.stats?.lastSavedTimestamp, Date.now()),
+    offlineEarningsClaimedTotal: sanitizeNum(data.stats?.offlineEarningsClaimedTotal, 0),
+    offlineEarningsClaimedTier: sanitizeNum(data.stats?.offlineEarningsClaimedTier, 0),
+    timesUpgraded: sanitizeNum(data.stats?.timesUpgraded, 0),
+    timesTimeSlipped: sanitizeNum(data.stats?.timesTimeSlipped, 0),
+  };
+
+  if (activeServerIdx >= 0) {
+    // Keep active server updated with top-level fields
+    sanitizedServers[activeServerIdx] = {
+      ...sanitizedServers[activeServerIdx],
+      money: rawMoney,
+      moneyTier,
+      currencyTier,
+      clockKhz: Math.max(740, sanitizeNum(data.clockKhz, DEFAULT_SAVE_DATA.clockKhz)),
+      cores: Math.max(1, sanitizeNum(data.cores, DEFAULT_SAVE_DATA.cores)),
+      clickMultiplier: Math.max(1, sanitizeNum(data.clickMultiplier, DEFAULT_SAVE_DATA.clickMultiplier)),
+      architectureLevel: Math.max(0, Math.floor(sanitizeNum(data.architectureLevel, 0))),
+      timeSlipCount,
+      costs: activeCosts,
+      stats: activeStats,
+    };
+  } else {
+    // Insert initial active server
+    sanitizedServers.unshift({
+      id: activeServerId,
+      name: 'サーバー #1 (地球原初メインフレーム)',
+      createdAt: data.stats?.gameStartTime || Date.now(),
+      money: rawMoney,
+      moneyTier,
+      currencyTier,
+      clockKhz: Math.max(740, sanitizeNum(data.clockKhz, DEFAULT_SAVE_DATA.clockKhz)),
+      cores: Math.max(1, sanitizeNum(data.cores, DEFAULT_SAVE_DATA.cores)),
+      clickMultiplier: Math.max(1, sanitizeNum(data.clickMultiplier, DEFAULT_SAVE_DATA.clickMultiplier)),
+      architectureLevel: Math.max(0, Math.floor(sanitizeNum(data.architectureLevel, 0))),
+      timeSlipCount,
+      costs: activeCosts,
+      stats: activeStats,
+    });
+  }
+
+  // Calculate highest timeline reached across all servers
+  const highestTimelineInServers = sanitizedServers.reduce(
+    (acc, s) => Math.max(acc, (s.timeSlipCount || 0) + 1),
+    timeSlipCount + 1
+  );
+  const maxTimelineReached = Math.max(
+    highestTimelineInServers,
+    sanitizeNum(data.maxTimelineReached, timeSlipCount + 1)
+  );
+
   return {
     version: SAVE_FORMAT_VERSION,
     money: rawMoney,
@@ -92,31 +223,17 @@ function sanitizeSaveData(data: Partial<GameSaveData>): GameSaveData {
     clickMultiplier: Math.max(1, sanitizeNum(data.clickMultiplier, DEFAULT_SAVE_DATA.clickMultiplier)),
     architectureLevel: Math.max(0, Math.floor(sanitizeNum(data.architectureLevel, 0))),
     timeSlipCount,
-    costs: {
-      clock: Math.max(10, sanitizeNum(data.costs?.clock, DEFAULT_SAVE_DATA.costs.clock)),
-      core: Math.max(50, sanitizeNum(data.costs?.core, DEFAULT_SAVE_DATA.costs.core)),
-      cache: Math.max(100, sanitizeNum(data.costs?.cache, DEFAULT_SAVE_DATA.costs.cache)),
-      clockTier: sanitizeNum(data.costs?.clockTier, 0),
-      coreTier: sanitizeNum(data.costs?.coreTier, 0),
-      cacheTier: sanitizeNum(data.costs?.cacheTier, 0),
-    },
-    stats: {
-      totalMoneyEarned: totalMoney,
-      totalMoneyTier,
-      totalClicks: sanitizeNum(data.stats?.totalClicks, 0),
-      gameStartTime: sanitizeNum(data.stats?.gameStartTime, Date.now()),
-      lastSavedTimestamp: sanitizeNum(data.stats?.lastSavedTimestamp, Date.now()),
-      offlineEarningsClaimedTotal: sanitizeNum(data.stats?.offlineEarningsClaimedTotal, 0),
-      offlineEarningsClaimedTier: sanitizeNum(data.stats?.offlineEarningsClaimedTier, 0),
-      timesUpgraded: sanitizeNum(data.stats?.timesUpgraded, 0),
-      timesTimeSlipped: sanitizeNum(data.stats?.timesTimeSlipped, 0),
-    },
+    costs: activeCosts,
+    stats: activeStats,
     settings: {
       soundEnabled: data.settings?.soundEnabled !== false,
       autoSaveIntervalSec: sanitizeNum(data.settings?.autoSaveIntervalSec, 2),
       autoUpgradeEnabled: data.settings?.autoUpgradeEnabled !== false,
     },
     unlockedAchievements: Array.isArray(data.unlockedAchievements) ? data.unlockedAchievements : [],
+    activeServerId,
+    servers: sanitizedServers,
+    maxTimelineReached,
   };
 }
 

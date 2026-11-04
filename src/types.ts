@@ -465,6 +465,34 @@ export interface GameStats {
 
 export const AUTO_UPGRADE_UNLOCK_TIMELINE = 30; // 第30世代世界線で自動アップグレード解放
 export const SKIP_EXPLANATION_TIMELINE = 70; // 第70世代世界線から説明を非表示・即時タイムスリップ
+export const MULTI_SERVER_UNLOCK_TIMELINE = 90; // 第90世代世界線を越えた時 (timeline > 90, 即ち 第91世代世界線〜)
+
+export const SERVER_PRESET_NAMES = [
+  "地球原初メインフレーム",
+  "月面量子クラスタ",
+  "火星ニューロファーム",
+  "木星軌道オメガアレイ",
+  "ダイソンスフィア主計算機",
+  "銀河中心特異点ノード",
+  "多元宇宙並列演算棟",
+  "プランク極限時空コア",
+];
+
+export interface CpuServer {
+  id: string;
+  name: string;
+  createdAt: number;
+  money: number;
+  moneyTier?: number;
+  currencyTier?: number;
+  clockKhz: number;
+  cores: number;
+  clickMultiplier: number;
+  architectureLevel: number;
+  timeSlipCount: number;
+  costs: Costs;
+  stats?: GameStats;
+}
 
 export interface GameSettings {
   soundEnabled: boolean;
@@ -486,6 +514,9 @@ export interface GameSaveData {
   stats: GameStats;
   settings: GameSettings;
   unlockedAchievements: string[];
+  activeServerId?: string;
+  servers?: CpuServer[];
+  maxTimelineReached?: number; // Highest timeline number reached across all servers
 }
 
 export interface Achievement {

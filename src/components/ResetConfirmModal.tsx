@@ -1,11 +1,13 @@
-import React from 'react';
-import { RotateCcw, AlertTriangle, X, ShieldAlert } from 'lucide-react';
+import React, { useState } from 'react';
+import { RotateCcw, AlertTriangle, X, ShieldAlert, ShieldCheck } from 'lucide-react';
 
 interface ResetConfirmModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirmReset: () => void;
+  onConfirmReset: (resetAllServers: boolean) => void;
   timeSlipCount: number;
+  currentServerName?: string;
+  serverCount?: number;
 }
 
 export const ResetConfirmModal: React.FC<ResetConfirmModalProps> = ({
@@ -13,8 +15,14 @@ export const ResetConfirmModal: React.FC<ResetConfirmModalProps> = ({
   onClose,
   onConfirmReset,
   timeSlipCount,
+  currentServerName = '現在のサーバー',
+  serverCount = 1,
 }) => {
+  const [resetScope, setResetScope] = useState<'current' | 'all'>('current');
+
   if (!isOpen) return null;
+
+  const hasMultipleServers = serverCount > 1;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in font-mono">
@@ -36,39 +44,90 @@ export const ResetConfirmModal: React.FC<ResetConfirmModalProps> = ({
             <AlertTriangle className="w-8 h-8 animate-pulse" />
           </div>
           <h2 className="text-xl font-extrabold text-white tracking-wide">
-            ゲームデータ完全リセット
+            リセット確認
           </h2>
           <p className="text-xs text-rose-400 font-semibold mt-1">
-            ⚠️ この操作を実行すると元に戻すことはできません
+            ⚠️ この操作を実行すると初期状態に戻ります
           </p>
         </div>
 
+        {/* Server Scope Selector if multiple servers exist */}
+        {hasMultipleServers && (
+          <div className="mb-4 bg-[#0e0c12] p-2.5 rounded-xl border border-rose-900/40 space-y-2">
+            <span className="text-[11px] font-bold text-gray-300 block">リセット範囲の選択:</span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setResetScope('current')}
+                className={`p-2.5 rounded-lg border text-left text-xs transition-all cursor-pointer ${
+                  resetScope === 'current'
+                    ? 'bg-blue-950/80 border-blue-400 text-blue-200 ring-1 ring-blue-400'
+                    : 'bg-[#141419] border-[#292933] text-gray-400 hover:border-gray-600'
+                }`}
+              >
+                <div className="font-bold flex items-center gap-1 text-[11px]">
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  現サーバーのみ
+                </div>
+                <div className="text-[10px] text-gray-400 mt-1">
+                  他の{serverCount - 1}台のCPUは保持
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setResetScope('all')}
+                className={`p-2.5 rounded-lg border text-left text-xs transition-all cursor-pointer ${
+                  resetScope === 'all'
+                    ? 'bg-rose-950/80 border-rose-500 text-rose-200 ring-1 ring-rose-500'
+                    : 'bg-[#141419] border-[#292933] text-gray-400 hover:border-gray-600'
+                }`}
+              >
+                <div className="font-bold flex items-center gap-1 text-[11px]">
+                  <RotateCcw className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                  全サーバー初期化
+                </div>
+                <div className="text-[10px] text-gray-400 mt-1">
+                  全{serverCount}台を完全リセット
+                </div>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Warning Details Card */}
-        <div className="bg-[#0e0c12] border border-rose-900/60 rounded-xl p-4 text-xs space-y-2.5 mb-5">
+        <div className="bg-[#0e0c12] border border-rose-900/60 rounded-xl p-4 text-xs space-y-2 mb-5">
           <div className="flex items-center gap-1.5 text-rose-300 font-bold">
             <ShieldAlert className="w-4 h-4 shrink-0 text-rose-400" />
-            <span>リセットされる内容:</span>
+            <span>
+              {resetScope === 'current' && hasMultipleServers
+                ? `「${currentServerName}」のみリセットされます:`
+                : 'リセットされる内容:'}
+            </span>
           </div>
-          <ul className="text-gray-300 space-y-1.5 pl-4 list-disc text-[11px] leading-relaxed">
+          <ul className="text-gray-300 space-y-1 pl-4 list-disc text-[11px] leading-relaxed">
             <li>
-              現在の所持資金および獲得累計資金（<strong className="text-rose-400">$0にリセット</strong>）
+              対象サーバーの所持資金（<strong className="text-rose-400">$0にリセット</strong>）
             </li>
             <li>
-              CPUスペック（クロック周波数、コア数、キャッシュ倍率）
+              対象サーバーのCPUスペック（クロック周波数 740kHz、1コアに戻ります）
             </li>
             <li>
-              アーキテクチャ進化段階（初期の <strong className="text-white">Intel 4004</strong> に戻ります）
+              対象サーバーのアーキテクチャ（初期の <strong className="text-white">4-bit Microprocessor</strong> に戻ります）
             </li>
             <li>
-              世界線情報（現在: 第 <strong className="text-purple-300">{timeSlipCount + 1}</strong> 世代 → <strong className="text-white">第 1 世代</strong>）
+              対象サーバーの世界線（現在: 第 <strong className="text-purple-300">{timeSlipCount + 1}</strong> 世代 → <strong className="text-white">第 1 世代</strong>）
             </li>
-            <li>
-              解放した実績およびプレイ統計データ
-            </li>
+            {resetScope === 'current' && hasMultipleServers ? (
+              <li className="text-emerald-400 font-bold">
+                ✅ 他のサーバーとそのCPUは一切消去されずそのまま残ります。
+              </li>
+            ) : (
+              <li className="text-rose-400">
+                ⚠️ 全サーバーの全データが工場出荷時の初期状態になります。
+              </li>
+            )}
           </ul>
-          <p className="text-[10px] text-gray-400 pt-1 border-t border-gray-800">
-            ※バックアップを残したい場合は、事前に「バックアップ・引継ぎ」画面からコードを保存してください。
-          </p>
         </div>
 
         {/* Action Buttons */}
@@ -82,13 +141,13 @@ export const ResetConfirmModal: React.FC<ResetConfirmModalProps> = ({
 
           <button
             onClick={() => {
-              onConfirmReset();
+              onConfirmReset(resetScope === 'all' || !hasMultipleServers);
               onClose();
             }}
             className="flex-1 py-3 px-4 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-rose-950/60"
           >
             <RotateCcw className="w-4 h-4" />
-            全データを初期化
+            {resetScope === 'current' && hasMultipleServers ? 'このサーバーを初期化' : '全データを初期化'}
           </button>
         </div>
       </div>
