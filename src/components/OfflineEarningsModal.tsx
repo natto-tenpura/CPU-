@@ -1,10 +1,13 @@
 import React from 'react';
-import { Clock, DollarSign, Award, Check } from 'lucide-react';
+import { Clock, Award, Check } from 'lucide-react';
+import { formatCurrency } from '../types.ts';
 
 interface OfflineEarningsModalProps {
   elapsedSeconds: number;
   offlineEarned: number;
+  offlineTier?: number;
   flops: number;
+  flopsTier?: number;
   onClaim: () => void;
   formatNumber: (num: number) => string;
 }
@@ -12,7 +15,9 @@ interface OfflineEarningsModalProps {
 export const OfflineEarningsModal: React.FC<OfflineEarningsModalProps> = ({
   elapsedSeconds,
   offlineEarned,
+  offlineTier = 0,
   flops,
+  flopsTier = 0,
   onClaim,
   formatNumber,
 }) => {
@@ -59,14 +64,13 @@ export const OfflineEarningsModal: React.FC<OfflineEarningsModalProps> = ({
 
           <div className="flex items-center justify-between text-xs text-gray-400 border-b border-gray-800 pb-2">
             <span>当時の演算能力:</span>
-            <span className="text-gray-200 font-semibold">{formatNumber(flops)} FLOP/s</span>
+            <span className="text-gray-200 font-semibold">{formatCurrency(flops, flopsTier, formatNumber)} /s</span>
           </div>
 
           <div className="flex items-center justify-between pt-1">
             <span className="text-sm font-bold text-gray-300">不在時獲得資金:</span>
             <span className="text-xl font-bold text-amber-400 flex items-center">
-              <DollarSign className="w-5 h-5 -mr-0.5" />
-              {formatNumber(offlineEarned)}
+              {formatCurrency(offlineEarned, offlineTier, formatNumber)}
             </span>
           </div>
         </div>

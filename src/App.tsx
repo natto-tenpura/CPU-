@@ -31,9 +31,18 @@ import {
   GameSaveData,
   getArchitecture,
   getMaxArchitectureLevel,
-  getTimeSlipCost,
+  getTimeSlipCostTiered,
   getTimeSlipMultiplier,
   AUTO_UPGRADE_UNLOCK_TIMELINE,
+  TieredAmount,
+  normalizeTieredAmount,
+  compareAmounts,
+  addAmounts,
+  subtractCost,
+  formatCurrency,
+  getCurrencyUnitInfo,
+  getFlopsTiered,
+  getClickGainTiered,
 } from './types.ts';
 import {
   loadGameData,
@@ -66,7 +75,9 @@ export default function App() {
   const [offlineData, setOfflineData] = useState<{
     elapsedSeconds: number;
     offlineEarned: number;
+    offlineTier: number;
     flops: number;
+    flopsTier: number;
   } | null>(null);
 
   // Modals
@@ -119,23 +130,26 @@ export default function App() {
     ? getArchitecture(gameState.architectureLevel + 1)
     : undefined;
 
-  const timeSlipCost = getTimeSlipCost(timeSlipCount);
-  const canTimeSlip = gameState.money >= timeSlipCost;
+  const timeSlipCost = getTimeSlipCostTiered(timeSlipCount);
+  const playerMoney: TieredAmount = { value: gameState.money, tier: gameState.moneyTier || 0 };
+  const canTimeSlip = compareAmounts(playerMoney, timeSlipCost) >= 0;
   const newlyUnlockableOnTimeSlip = getArchitecture(maxAllowedArch + 1);
 
-  // FLOPS (演算能力 with Time Slip permanent multiplier)
-  const getFLOPS = useCallback((): number => {
-    const arch = getArchitecture(gameState.architectureLevel);
-    const tsMult = getTimeSlipMultiplier(gameState.timeSlipCount || 0);
-    return (gameState.clockKhz / 10) * gameState.cores * arch.mult * tsMult;
-  }, [gameState.architectureLevel, gameState.clockKhz, gameState.cores, gameState.timeSlipCount]);
+  // FLOPS (演算能力 with Time Slip permanent multiplier) as TieredAmount
+  const flopsTiered = getFlopsTiered(
+    gameState.clockKhz,
+    gameState.cores,
+    currentArch.mult,
+    timeSlipCount
+  );
 
-  // Click gain with Time Slip permanent multiplier
-  const getClickGain = useCallback((): number => {
-    const arch = getArchitecture(gameState.architectureLevel);
-    const tsMult = getTimeSlipMultiplier(gameState.timeSlipCount || 0);
-    return Math.max(1, (gameState.clockKhz / 100) * gameState.clickMultiplier * arch.mult * tsMult);
-  }, [gameState.architectureLevel, gameState.clockKhz, gameState.clickMultiplier, gameState.timeSlipCount]);
+  // Click gain with Time Slip permanent multiplier as TieredAmount
+  const clickGainTiered = getClickGainTiered(
+    gameState.clockKhz,
+    gameState.clickMultiplier,
+    currentArch.mult,
+    timeSlipCount
+  );
 
   // Check achievements
   const checkAchievements = useCallback((currentData: GameSaveData): string[] => {
@@ -151,8 +165,15 @@ export default function App() {
     if ((currentData.timeSlipCount || 0) >= 1) unlocked.add('timeslip_1');
     if ((currentData.timeSlipCount || 0) >= 3) unlocked.add('timeslip_3');
     if ((currentData.timeSlipCount || 0) >= 29) unlocked.add('timeslip_30');
-    if (currentData.stats.totalMoneyEarned >= 1000000) unlocked.add('millionaire');
-    if (currentData.stats.totalMoneyEarned >= 1000000000) unlocked.add('billionaire');
+    if ((currentData.moneyTier && currentData.moneyTier >= 1) || (currentData.stats.totalMoneyTier && currentData.stats.totalMoneyTier >= 1)) {
+      unlocked.add('googol_tier');
+    }
+    if ((currentData.stats.totalMoneyTier && currentData.stats.totalMoneyTier >= 1) || currentData.stats.totalMoneyEarned >= 1000000) {
+      unlocked.add('millionaire');
+    }
+    if ((currentData.stats.totalMoneyTier && currentData.stats.totalMoneyTier >= 1) || currentData.stats.totalMoneyEarned >= 1000000000) {
+      unlocked.add('billionaire');
+    }
     return Array.from(unlocked);
   }, []);
 
@@ -181,15 +202,25 @@ export default function App() {
     }
 
     const arch = getArchitecture(data.architectureLevel);
-    const tsMult = getTimeSlipMultiplier(data.timeSlipCount || 0);
-    const flops = (data.clockKhz / 10) * data.cores * arch.mult * tsMult;
-    const offlineResult = calculateOfflineEarnings(data.stats.lastSavedTimestamp, flops);
+    const initialFlopsTiered = getFlopsTiered(
+      data.clockKhz,
+      data.cores,
+      arch.mult,
+      data.timeSlipCount || 0
+    );
+    const offlineResult = calculateOfflineEarnings(
+      data.stats.lastSavedTimestamp,
+      initialFlopsTiered.value,
+      initialFlopsTiered.tier
+    );
 
-    if (offlineResult && offlineResult.offlineEarned > 0) {
+    if (offlineResult && (offlineResult.offlineEarned > 0 || offlineResult.offlineTier > 0)) {
       setOfflineData({
         elapsedSeconds: offlineResult.elapsedSeconds,
         offlineEarned: offlineResult.offlineEarned,
-        flops,
+        offlineTier: offlineResult.offlineTier,
+        flops: initialFlopsTiered.value,
+        flopsTier: initialFlopsTiered.tier,
       });
     }
   }, []);
@@ -200,13 +231,29 @@ export default function App() {
     playSound.claim(gameState.settings.soundEnabled);
 
     setGameState((prev) => {
+      const addedMoney = addAmounts(
+        { value: prev.money, tier: prev.moneyTier || 0 },
+        { value: offlineData.offlineEarned, tier: offlineData.offlineTier }
+      );
+      const addedTotal = addAmounts(
+        { value: prev.stats.totalMoneyEarned, tier: prev.stats.totalMoneyTier || 0 },
+        { value: offlineData.offlineEarned, tier: offlineData.offlineTier }
+      );
+      const addedOfflineClaimed = addAmounts(
+        { value: prev.stats.offlineEarningsClaimedTotal, tier: prev.stats.offlineEarningsClaimedTier || 0 },
+        { value: offlineData.offlineEarned, tier: offlineData.offlineTier }
+      );
+
       const updated: GameSaveData = {
         ...prev,
-        money: prev.money + offlineData.offlineEarned,
+        money: addedMoney.value,
+        moneyTier: addedMoney.tier,
         stats: {
           ...prev.stats,
-          totalMoneyEarned: prev.stats.totalMoneyEarned + offlineData.offlineEarned,
-          offlineEarningsClaimedTotal: prev.stats.offlineEarningsClaimedTotal + offlineData.offlineEarned,
+          totalMoneyEarned: addedTotal.value,
+          totalMoneyTier: addedTotal.tier,
+          offlineEarningsClaimedTotal: addedOfflineClaimed.value,
+          offlineEarningsClaimedTier: addedOfflineClaimed.tier,
           lastSavedTimestamp: Date.now(),
         },
       };
@@ -222,18 +269,33 @@ export default function App() {
     const interval = setInterval(() => {
       const current = gameStateRef.current;
       const arch = getArchitecture(current.architectureLevel);
-      const tsMult = getTimeSlipMultiplier(current.timeSlipCount || 0);
-      const flops = (current.clockKhz / 10) * current.cores * arch.mult * tsMult;
-      const perTick = flops / 10;
-
       const currentTimeline = (current.timeSlipCount || 0) + 1;
       const isAutoUpgradeUnlocked = currentTimeline >= AUTO_UPGRADE_UNLOCK_TIMELINE;
       const isAutoUpgradeEnabled = isAutoUpgradeUnlocked && current.settings.autoUpgradeEnabled !== false;
 
-      if (perTick > 0 || isAutoUpgradeEnabled) {
+      const currentFlops = getFlopsTiered(
+        current.clockKhz,
+        current.cores,
+        arch.mult,
+        current.timeSlipCount || 0
+      );
+
+      // Per tick is currentFlops / 10
+      const perTick: TieredAmount = normalizeTieredAmount({
+        value: currentFlops.value / 10,
+        tier: currentFlops.tier,
+      });
+
+      if (perTick.value > 0 || perTick.tier > 0 || isAutoUpgradeEnabled) {
         setGameState((prev) => {
-          let newMoney = prev.money + perTick;
-          const newTotal = prev.stats.totalMoneyEarned + perTick;
+          let currentMoney: TieredAmount = addAmounts(
+            { value: prev.money, tier: prev.moneyTier || 0 },
+            perTick
+          );
+          const currentTotal: TieredAmount = addAmounts(
+            { value: prev.stats.totalMoneyEarned, tier: prev.stats.totalMoneyTier || 0 },
+            perTick
+          );
           let clockKhz = prev.clockKhz;
           let cores = prev.cores;
           let clickMultiplier = prev.clickMultiplier;
@@ -251,39 +313,59 @@ export default function App() {
 
             // Purchase up to 15 cheapest upgrades per tick while affordable
             for (let i = 0; i < 15; i++) {
-              const candidates: { type: 'clock' | 'core' | 'cache' | 'evolution'; cost: number }[] = [
-                { type: 'clock', cost: costs.clock },
-                { type: 'core', cost: costs.core },
-                { type: 'cache', cost: costs.cache },
+              const clockCost: TieredAmount = { value: costs.clock, tier: costs.clockTier || 0 };
+              const coreCost: TieredAmount = { value: costs.core, tier: costs.coreTier || 0 };
+              const cacheCost: TieredAmount = { value: costs.cache, tier: costs.cacheTier || 0 };
+
+              const candidates: { type: 'clock' | 'core' | 'cache' | 'evolution'; cost: TieredAmount }[] = [
+                { type: 'clock', cost: clockCost },
+                { type: 'core', cost: coreCost },
+                { type: 'cache', cost: cacheCost },
               ];
 
               if (architectureLevel < maxArch) {
+                const currentArchDef = getArchitecture(architectureLevel);
                 candidates.push({
                   type: 'evolution',
-                  cost: getArchitecture(architectureLevel).cost,
+                  cost: { value: currentArchDef.cost, tier: currentArchDef.costTier || 0 },
                 });
               }
 
-              candidates.sort((a, b) => a.cost - b.cost);
+              candidates.sort((a, b) => compareAmounts(a.cost, b.cost));
               const cheapest = candidates[0];
 
-              if (!cheapest || newMoney < cheapest.cost) {
+              if (!cheapest || compareAmounts(currentMoney, cheapest.cost) < 0) {
                 break;
               }
 
-              newMoney -= cheapest.cost;
+              currentMoney = subtractCost(currentMoney, cheapest.cost);
               timesUpgraded++;
               didUpgrade = true;
 
               if (cheapest.type === 'clock') {
                 clockKhz *= 1.25;
-                costs.clock = Math.floor(costs.clock * 1.5);
+                const nextClockCost = normalizeTieredAmount({
+                  value: costs.clock * 1.5,
+                  tier: costs.clockTier || 0,
+                });
+                costs.clock = nextClockCost.value;
+                costs.clockTier = nextClockCost.tier;
               } else if (cheapest.type === 'core') {
                 cores += 1;
-                costs.core = Math.floor(costs.core * 1.8);
+                const nextCoreCost = normalizeTieredAmount({
+                  value: costs.core * 1.8,
+                  tier: costs.coreTier || 0,
+                });
+                costs.core = nextCoreCost.value;
+                costs.coreTier = nextCoreCost.tier;
               } else if (cheapest.type === 'cache') {
                 clickMultiplier *= 2;
-                costs.cache = Math.floor(costs.cache * 2.5);
+                const nextCacheCost = normalizeTieredAmount({
+                  value: costs.cache * 2.5,
+                  tier: costs.cacheTier || 0,
+                });
+                costs.cache = nextCacheCost.value;
+                costs.cacheTier = nextCacheCost.tier;
               } else if (cheapest.type === 'evolution') {
                 architectureLevel += 1;
               }
@@ -292,7 +374,8 @@ export default function App() {
 
           const updated: GameSaveData = {
             ...prev,
-            money: newMoney,
+            money: currentMoney.value,
+            moneyTier: currentMoney.tier,
             clockKhz,
             cores,
             clickMultiplier,
@@ -300,7 +383,8 @@ export default function App() {
             costs,
             stats: {
               ...prev.stats,
-              totalMoneyEarned: newTotal,
+              totalMoneyEarned: currentTotal.value,
+              totalMoneyTier: currentTotal.tier,
               timesUpgraded,
             },
           };
@@ -349,7 +433,6 @@ export default function App() {
 
   // Manual calculation click handler
   const handleManualCalculate = (e: React.MouseEvent<HTMLButtonElement>) => {
-    const gain = getClickGain();
     playSound.click(gameState.settings.soundEnabled);
 
     setIsClicking(true);
@@ -362,7 +445,7 @@ export default function App() {
 
     const newGain: FloatingGain = {
       id: Date.now() + Math.random(),
-      text: `+$${formatNumber(gain)}`,
+      text: `+${formatCurrency(clickGainTiered.value, clickGainTiered.tier, formatNumber)}`,
       x: spawnX,
       y: spawnY,
     };
@@ -373,14 +456,24 @@ export default function App() {
     }, 900);
 
     setGameState((prev) => {
+      const addedMoney = addAmounts(
+        { value: prev.money, tier: prev.moneyTier || 0 },
+        clickGainTiered
+      );
+      const addedTotal = addAmounts(
+        { value: prev.stats.totalMoneyEarned, tier: prev.stats.totalMoneyTier || 0 },
+        clickGainTiered
+      );
       const nextClicks = prev.stats.totalClicks + 1;
       const updated: GameSaveData = {
         ...prev,
-        money: prev.money + gain,
+        money: addedMoney.value,
+        moneyTier: addedMoney.tier,
         stats: {
           ...prev.stats,
           totalClicks: nextClicks,
-          totalMoneyEarned: prev.stats.totalMoneyEarned + gain,
+          totalMoneyEarned: addedTotal.value,
+          totalMoneyTier: addedTotal.tier,
         },
       };
 
@@ -395,17 +488,29 @@ export default function App() {
 
   // Upgrades
   const handleUpgradeClock = () => {
-    if (gameState.money < gameState.costs.clock) return;
+    const clockCost: TieredAmount = { value: gameState.costs.clock, tier: gameState.costs.clockTier || 0 };
+    const playerMoney: TieredAmount = { value: gameState.money, tier: gameState.moneyTier || 0 };
+    if (compareAmounts(playerMoney, clockCost) < 0) return;
     playSound.upgrade(gameState.settings.soundEnabled);
 
     setGameState((prev) => {
+      const currentMoney: TieredAmount = { value: prev.money, tier: prev.moneyTier || 0 };
+      const currentCost: TieredAmount = { value: prev.costs.clock, tier: prev.costs.clockTier || 0 };
+      const remainingMoney = subtractCost(currentMoney, currentCost);
+      const nextClockCost = normalizeTieredAmount({
+        value: prev.costs.clock * 1.5,
+        tier: prev.costs.clockTier || 0,
+      });
+
       const updated: GameSaveData = {
         ...prev,
-        money: prev.money - prev.costs.clock,
+        money: remainingMoney.value,
+        moneyTier: remainingMoney.tier,
         clockKhz: prev.clockKhz * 1.25,
         costs: {
           ...prev.costs,
-          clock: Math.floor(prev.costs.clock * 1.5),
+          clock: nextClockCost.value,
+          clockTier: nextClockCost.tier,
         },
         stats: {
           ...prev.stats,
@@ -419,17 +524,29 @@ export default function App() {
   };
 
   const handleUpgradeCore = () => {
-    if (gameState.money < gameState.costs.core) return;
+    const coreCost: TieredAmount = { value: gameState.costs.core, tier: gameState.costs.coreTier || 0 };
+    const playerMoney: TieredAmount = { value: gameState.money, tier: gameState.moneyTier || 0 };
+    if (compareAmounts(playerMoney, coreCost) < 0) return;
     playSound.upgrade(gameState.settings.soundEnabled);
 
     setGameState((prev) => {
+      const currentMoney: TieredAmount = { value: prev.money, tier: prev.moneyTier || 0 };
+      const currentCost: TieredAmount = { value: prev.costs.core, tier: prev.costs.coreTier || 0 };
+      const remainingMoney = subtractCost(currentMoney, currentCost);
+      const nextCoreCost = normalizeTieredAmount({
+        value: prev.costs.core * 1.8,
+        tier: prev.costs.coreTier || 0,
+      });
+
       const updated: GameSaveData = {
         ...prev,
-        money: prev.money - prev.costs.core,
+        money: remainingMoney.value,
+        moneyTier: remainingMoney.tier,
         cores: prev.cores + 1,
         costs: {
           ...prev.costs,
-          core: Math.floor(prev.costs.core * 1.8),
+          core: nextCoreCost.value,
+          coreTier: nextCoreCost.tier,
         },
         stats: {
           ...prev.stats,
@@ -443,17 +560,29 @@ export default function App() {
   };
 
   const handleUpgradeCache = () => {
-    if (gameState.money < gameState.costs.cache) return;
+    const cacheCost: TieredAmount = { value: gameState.costs.cache, tier: gameState.costs.cacheTier || 0 };
+    const playerMoney: TieredAmount = { value: gameState.money, tier: gameState.moneyTier || 0 };
+    if (compareAmounts(playerMoney, cacheCost) < 0) return;
     playSound.upgrade(gameState.settings.soundEnabled);
 
     setGameState((prev) => {
+      const currentMoney: TieredAmount = { value: prev.money, tier: prev.moneyTier || 0 };
+      const currentCost: TieredAmount = { value: prev.costs.cache, tier: prev.costs.cacheTier || 0 };
+      const remainingMoney = subtractCost(currentMoney, currentCost);
+      const nextCacheCost = normalizeTieredAmount({
+        value: prev.costs.cache * 2.5,
+        tier: prev.costs.cacheTier || 0,
+      });
+
       const updated: GameSaveData = {
         ...prev,
-        money: prev.money - prev.costs.cache,
+        money: remainingMoney.value,
+        moneyTier: remainingMoney.tier,
         clickMultiplier: prev.clickMultiplier * 2,
         costs: {
           ...prev.costs,
-          cache: Math.floor(prev.costs.cache * 2.5),
+          cache: nextCacheCost.value,
+          cacheTier: nextCacheCost.tier,
         },
         stats: {
           ...prev.stats,
@@ -468,7 +597,9 @@ export default function App() {
 
   // Evolve Architecture
   const handleEvolveArchitecture = () => {
-    if (!nextArch || isMaxEvolution || gameState.money < currentArch.cost) return;
+    const archCost: TieredAmount = { value: currentArch.cost, tier: currentArch.costTier || 0 };
+    const playerMoney: TieredAmount = { value: gameState.money, tier: gameState.moneyTier || 0 };
+    if (!nextArch || isMaxEvolution || compareAmounts(playerMoney, archCost) < 0) return;
     playSound.evolve(gameState.settings.soundEnabled);
 
     try {
@@ -481,9 +612,12 @@ export default function App() {
     } catch {}
 
     setGameState((prev) => {
+      const currentMoney: TieredAmount = { value: prev.money, tier: prev.moneyTier || 0 };
+      const remainingMoney = subtractCost(currentMoney, archCost);
       const updated: GameSaveData = {
         ...prev,
-        money: prev.money - currentArch.cost,
+        money: remainingMoney.value,
+        moneyTier: remainingMoney.tier,
         architectureLevel: prev.architectureLevel + 1,
         stats: {
           ...prev.stats,
@@ -498,7 +632,7 @@ export default function App() {
 
   // Execute Time Slip Prestige
   const handleConfirmTimeSlip = () => {
-    if (gameState.money < timeSlipCost) return;
+    if (!canTimeSlip) return;
     playSound.timeSlip(gameState.settings.soundEnabled);
 
     // Cosmic warp confetti celebration
@@ -516,6 +650,7 @@ export default function App() {
       const updated: GameSaveData = {
         ...prev,
         money: 0, // Reset money to $0 upon Time Slip (CPU is NOT reset!)
+        moneyTier: 0,
         timeSlipCount: nextTimeSlipCount,
         stats: {
           ...prev.stats,
@@ -587,8 +722,17 @@ export default function App() {
     setTimeout(() => setSaveNotice(null), 4000);
   };
 
-  const flops = getFLOPS();
-  const clickGain = getClickGain();
+  const timeSlipProgressPct = (() => {
+    if (playerMoney.tier > timeSlipCost.tier) return 100;
+    if (playerMoney.tier === timeSlipCost.tier) {
+      return Math.min(100, Math.floor((playerMoney.value / timeSlipCost.value) * 100));
+    }
+    if (timeSlipCost.tier - playerMoney.tier === 1) {
+      return Math.min(100, Math.floor(((playerMoney.value / 1e100) / timeSlipCost.value) * 100));
+    }
+    return 0;
+  })();
+  const remainingTimeSlip = subtractCost(timeSlipCost, playerMoney);
 
   return (
     <div className="min-h-screen bg-[#0d1117] text-[#c9d1d9] font-mono selection:bg-purple-600 selection:text-white flex flex-col items-center p-3 sm:p-6">
@@ -637,6 +781,17 @@ export default function App() {
               x{timeSlipMult.toLocaleString()}
             </span>
           </button>
+
+          {/* Multi-Tier Currency Badge (When >= 1e100) */}
+          {gameState.moneyTier && gameState.moneyTier >= 1 ? (
+            <div
+              className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-pink-950/80 border border-pink-500/60 text-pink-300 text-[11px] font-bold shadow-md shadow-pink-950/40"
+              title="金額が10^100を超えたため、新しい通貨単位に移行しました"
+            >
+              <Sparkles className="w-3 h-3 text-pink-400 shrink-0" />
+              <span>{getCurrencyUnitInfo(gameState.moneyTier).symbol}</span>
+            </div>
+          ) : null}
 
           {/* Action buttons */}
           <div className="flex items-center space-x-1 sm:space-x-2 ml-auto">
@@ -703,13 +858,24 @@ export default function App() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-base sm:text-lg">
             <div className="flex justify-between items-center bg-[#0d1117] px-3.5 py-2.5 rounded-lg border border-[#21262d]">
               <span className="text-gray-400 text-sm">資金:</span>
-              <span className="font-bold text-[#f1e05a] text-xl">${formatNumber(gameState.money)}</span>
+              <div className="text-right">
+                <span className="font-bold text-[#f1e05a] text-xl">
+                  {formatCurrency(gameState.money, gameState.moneyTier || 0, formatNumber)}
+                </span>
+                {gameState.moneyTier && gameState.moneyTier >= 1 ? (
+                  <span className="block text-[10px] text-pink-400 font-bold">
+                    単位: {getCurrencyUnitInfo(gameState.moneyTier).name}
+                  </span>
+                ) : null}
+              </div>
             </div>
 
             <div className="flex justify-between items-center bg-[#0d1117] px-3.5 py-2.5 rounded-lg border border-[#21262d]">
               <span className="text-gray-400 text-sm">演算能力:</span>
               <div className="text-right">
-                <span className="font-bold text-white text-lg">{formatNumber(flops)} /s</span>
+                <span className="font-bold text-white text-lg">
+                  {formatCurrency(flopsTiered.value, flopsTiered.tier, formatNumber)} /s
+                </span>
                 {timeSlipCount > 0 && (
                   <span className="block text-[10px] text-amber-400">
                     (x{timeSlipMult.toLocaleString()} 時空ブースト)
@@ -747,7 +913,7 @@ export default function App() {
               演算サイクルを実行
             </span>
             <span className="block text-[11px] text-emerald-100 font-normal mt-0.5 opacity-90">
-              1サイクル獲得: +${formatNumber(clickGain)}
+              1サイクル獲得: +{formatCurrency(clickGainTiered.value, clickGainTiered.tier, formatNumber)}
             </span>
 
             {/* Floating click number indicators */}
@@ -816,7 +982,7 @@ export default function App() {
             {/* Clock Upgrade */}
             <button
               onClick={handleUpgradeClock}
-              disabled={gameState.money < gameState.costs.clock}
+              disabled={compareAmounts(playerMoney, { value: gameState.costs.clock, tier: gameState.costs.clockTier || 0 }) < 0}
               className="w-full bg-[#21262d] border border-[#30363d] hover:border-[#58a6ff] hover:bg-[#30363d] disabled:opacity-40 disabled:hover:border-[#30363d] disabled:hover:bg-[#21262d] disabled:cursor-not-allowed text-[#c9d1d9] p-3.5 rounded-xl flex items-center justify-between transition-all cursor-pointer text-left"
             >
               <div>
@@ -826,7 +992,7 @@ export default function App() {
               <div className="text-right">
                 <span className="text-xs text-gray-400 block">必要資金</span>
                 <span className="text-[#f1e05a] font-bold text-sm sm:text-base">
-                  ${formatNumber(gameState.costs.clock)}
+                  {formatCurrency(gameState.costs.clock, gameState.costs.clockTier || 0, formatNumber)}
                 </span>
               </div>
             </button>
@@ -834,7 +1000,7 @@ export default function App() {
             {/* Core Upgrade */}
             <button
               onClick={handleUpgradeCore}
-              disabled={gameState.money < gameState.costs.core}
+              disabled={compareAmounts(playerMoney, { value: gameState.costs.core, tier: gameState.costs.coreTier || 0 }) < 0}
               className="w-full bg-[#21262d] border border-[#30363d] hover:border-[#58a6ff] hover:bg-[#30363d] disabled:opacity-40 disabled:hover:border-[#30363d] disabled:hover:bg-[#21262d] disabled:cursor-not-allowed text-[#c9d1d9] p-3.5 rounded-xl flex items-center justify-between transition-all cursor-pointer text-left"
             >
               <div>
@@ -844,7 +1010,7 @@ export default function App() {
               <div className="text-right">
                 <span className="text-xs text-gray-400 block">必要資金</span>
                 <span className="text-[#f1e05a] font-bold text-sm sm:text-base">
-                  ${formatNumber(gameState.costs.core)}
+                  {formatCurrency(gameState.costs.core, gameState.costs.coreTier || 0, formatNumber)}
                 </span>
               </div>
             </button>
@@ -852,7 +1018,7 @@ export default function App() {
             {/* Cache Upgrade */}
             <button
               onClick={handleUpgradeCache}
-              disabled={gameState.money < gameState.costs.cache}
+              disabled={compareAmounts(playerMoney, { value: gameState.costs.cache, tier: gameState.costs.cacheTier || 0 }) < 0}
               className="w-full bg-[#21262d] border border-[#30363d] hover:border-[#58a6ff] hover:bg-[#30363d] disabled:opacity-40 disabled:hover:border-[#30363d] disabled:hover:bg-[#21262d] disabled:cursor-not-allowed text-[#c9d1d9] p-3.5 rounded-xl flex items-center justify-between transition-all cursor-pointer text-left"
             >
               <div>
@@ -862,7 +1028,7 @@ export default function App() {
               <div className="text-right">
                 <span className="text-xs text-gray-400 block">必要資金</span>
                 <span className="text-[#f1e05a] font-bold text-sm sm:text-base">
-                  ${formatNumber(gameState.costs.cache)}
+                  {formatCurrency(gameState.costs.cache, gameState.costs.cacheTier || 0, formatNumber)}
                 </span>
               </div>
             </button>
@@ -870,7 +1036,7 @@ export default function App() {
             {/* Evolution Upgrade */}
             <button
               onClick={!isMaxEvolution ? handleEvolveArchitecture : () => setIsTimeSlipOpen(true)}
-              disabled={!isMaxEvolution && gameState.money < currentArch.cost}
+              disabled={!isMaxEvolution && compareAmounts(playerMoney, { value: currentArch.cost, tier: currentArch.costTier || 0 }) < 0}
               className={`w-full bg-[#21262d] border-2 p-3.5 rounded-xl flex items-center justify-between transition-all cursor-pointer text-left shadow-lg ${
                 isMaxEvolution
                   ? 'border-purple-500/80 hover:border-purple-400 bg-purple-950/20'
@@ -905,7 +1071,7 @@ export default function App() {
                     isMaxEvolution ? 'text-purple-300' : 'text-[#f1e05a]'
                   }`}
                 >
-                  {!isMaxEvolution ? `$${formatNumber(currentArch.cost)}` : 'MAX到達'}
+                  {!isMaxEvolution ? formatCurrency(currentArch.cost, currentArch.costTier || 0, formatNumber) : 'MAX到達'}
                 </span>
               </div>
             </button>
@@ -954,7 +1120,7 @@ export default function App() {
             <div className="text-right">
               <span className="text-[10px] text-gray-400 block">跳躍必要資金</span>
               <span className="text-sm sm:text-base font-black text-amber-400">
-                ${formatNumber(timeSlipCost)}
+                {formatCurrency(timeSlipCost.value, timeSlipCost.tier, formatNumber)}
               </span>
             </div>
           </div>
@@ -986,15 +1152,14 @@ export default function App() {
             <div className="flex justify-between items-center text-xs mb-1.5">
               <span className="text-gray-400">資金蓄積率:</span>
               <span className="font-bold text-gray-200">
-                ${formatNumber(gameState.money)} / ${formatNumber(timeSlipCost)} (
-                {Math.min(100, Math.floor((gameState.money / timeSlipCost) * 100))}%)
+                {formatCurrency(gameState.money, gameState.moneyTier || 0, formatNumber)} / {formatCurrency(timeSlipCost.value, timeSlipCost.tier, formatNumber)} ({timeSlipProgressPct}%)
               </span>
             </div>
             <div className="w-full h-2.5 bg-gray-900 rounded-full overflow-hidden border border-gray-800">
               <div
                 className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full transition-all duration-300"
                 style={{
-                  width: `${Math.min(100, (gameState.money / timeSlipCost) * 100)}%`,
+                  width: `${timeSlipProgressPct}%`,
                 }}
               />
             </div>
@@ -1013,7 +1178,7 @@ export default function App() {
             {isMaxEvolution
               ? canTimeSlip
                 ? '🌌 タイムスリップを実行（資金リセット ＆ 更なる進化解放）'
-                : `タイムスリップの準備中 (あと $${formatNumber(timeSlipCost - gameState.money)} 必要)`
+                : `タイムスリップの準備中 (あと ${formatCurrency(remainingTimeSlip.value, remainingTimeSlip.tier, formatNumber)} 必要)`
               : 'タイムスリップの詳細・ロードマップを確認'}
           </button>
         </div>
@@ -1065,7 +1230,9 @@ export default function App() {
         <OfflineEarningsModal
           elapsedSeconds={offlineData.elapsedSeconds}
           offlineEarned={offlineData.offlineEarned}
+          offlineTier={offlineData.offlineTier}
           flops={offlineData.flops}
+          flopsTier={offlineData.flopsTier}
           onClaim={handleClaimOfflineEarnings}
           formatNumber={formatNumber}
         />
@@ -1077,6 +1244,7 @@ export default function App() {
         onClose={() => setIsTimeSlipOpen(false)}
         timeSlipCount={timeSlipCount}
         currentMoney={gameState.money}
+        currentMoneyTier={gameState.moneyTier || 0}
         onConfirmTimeSlip={handleConfirmTimeSlip}
         formatNumber={formatNumber}
       />

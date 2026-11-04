@@ -11,7 +11,7 @@ import {
   Hourglass,
   Sparkles,
 } from 'lucide-react';
-import { GameStats, Architecture, getTimeSlipMultiplier } from '../types.ts';
+import { GameStats, Architecture, getTimeSlipMultiplier, formatCurrency } from '../types.ts';
 
 interface StatsModalProps {
   isOpen: boolean;
@@ -42,6 +42,7 @@ const ALL_ACHIEVEMENTS: AchievementDef[] = [
   { id: 'photonic_era', title: '光速光子演算', desc: 'タイムスリップ後、光子ニューロモルフィックへ進化', icon: '💡' },
   { id: 'timeslip_3', title: '多元宇宙の観測者', desc: 'タイムスリップを累計3回以上実行', icon: '🌀' },
   { id: 'timeslip_30', title: '全自動演算の境地', desc: '第30世代世界線に到達し最安自動アップグレードを解放', icon: '🤖' },
+  { id: 'googol_tier', title: 'グーゴル領域突入', desc: '所持資金が10^100を超えて新通貨単位「G$」を解放', icon: '🪐' },
   { id: 'millionaire', title: '演算長者', desc: '累計獲得資金が $1,000,000 を突破', icon: '👑' },
   { id: 'billionaire', title: 'ギガ富豪', desc: '累計獲得資金が $1,000,000,000 を突破', icon: '💎' },
 ];
@@ -113,7 +114,9 @@ export const StatsModal: React.FC<StatsModalProps> = ({
             <div className="text-[11px] text-gray-400 flex items-center gap-1 mb-1">
               <DollarSign className="w-3.5 h-3.5 text-amber-400" /> 累計獲得資金
             </div>
-            <div className="text-base font-bold text-amber-400">${formatNumber(stats.totalMoneyEarned)}</div>
+            <div className="text-base font-bold text-amber-400">
+              {formatCurrency(stats.totalMoneyEarned, stats.totalMoneyTier || 0, formatNumber)}
+            </div>
           </div>
 
           <div className="bg-[#0d1117] border border-gray-800 rounded-xl p-3">
@@ -134,7 +137,9 @@ export const StatsModal: React.FC<StatsModalProps> = ({
             <div className="text-[11px] text-gray-400 flex items-center gap-1 mb-1">
               <Zap className="w-3.5 h-3.5 text-emerald-400" /> 放置収益累計受取
             </div>
-            <div className="text-base font-bold text-emerald-400">${formatNumber(stats.offlineEarningsClaimedTotal)}</div>
+            <div className="text-base font-bold text-emerald-400">
+              {formatCurrency(stats.offlineEarningsClaimedTotal, stats.offlineEarningsClaimedTier || 0, formatNumber)}
+            </div>
           </div>
         </div>
 

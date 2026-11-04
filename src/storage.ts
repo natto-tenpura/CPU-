@@ -18,6 +18,7 @@ export const SAVE_FORMAT_VERSION = 2;
 export const DEFAULT_SAVE_DATA: GameSaveData = {
   version: SAVE_FORMAT_VERSION,
   money: 0,
+  moneyTier: 0,
   clockKhz: 740,
   cores: 1,
   clickMultiplier: 1,
@@ -27,13 +28,18 @@ export const DEFAULT_SAVE_DATA: GameSaveData = {
     clock: 10,
     core: 50,
     cache: 100,
+    clockTier: 0,
+    coreTier: 0,
+    cacheTier: 0,
   },
   stats: {
     totalMoneyEarned: 0,
+    totalMoneyTier: 0,
     totalClicks: 0,
     gameStartTime: Date.now(),
     lastSavedTimestamp: Date.now(),
     offlineEarningsClaimedTotal: 0,
+    offlineEarningsClaimedTier: 0,
     timesUpgraded: 0,
     timesTimeSlipped: 0,
   },
@@ -59,9 +65,24 @@ function sanitizeSaveData(data: Partial<GameSaveData>): GameSaveData {
   const timeSlipCount = sanitizeNum(data.timeSlipCount, 0);
   const maxAllowedArch = getMaxArchitectureLevel(timeSlipCount);
 
+  let rawMoney = sanitizeNum(data.money, DEFAULT_SAVE_DATA.money);
+  let moneyTier = sanitizeNum(data.moneyTier, 0);
+  while (rawMoney >= 1e100) {
+    rawMoney /= 1e100;
+    moneyTier += 1;
+  }
+
+  let totalMoney = sanitizeNum(data.stats?.totalMoneyEarned, rawMoney);
+  let totalMoneyTier = sanitizeNum(data.stats?.totalMoneyTier, moneyTier);
+  while (totalMoney >= 1e100) {
+    totalMoney /= 1e100;
+    totalMoneyTier += 1;
+  }
+
   return {
     version: SAVE_FORMAT_VERSION,
-    money: sanitizeNum(data.money, DEFAULT_SAVE_DATA.money),
+    money: rawMoney,
+    moneyTier,
     clockKhz: Math.max(740, sanitizeNum(data.clockKhz, DEFAULT_SAVE_DATA.clockKhz)),
     cores: Math.max(1, sanitizeNum(data.cores, DEFAULT_SAVE_DATA.cores)),
     clickMultiplier: Math.max(1, sanitizeNum(data.clickMultiplier, DEFAULT_SAVE_DATA.clickMultiplier)),
@@ -71,13 +92,18 @@ function sanitizeSaveData(data: Partial<GameSaveData>): GameSaveData {
       clock: Math.max(10, sanitizeNum(data.costs?.clock, DEFAULT_SAVE_DATA.costs.clock)),
       core: Math.max(50, sanitizeNum(data.costs?.core, DEFAULT_SAVE_DATA.costs.core)),
       cache: Math.max(100, sanitizeNum(data.costs?.cache, DEFAULT_SAVE_DATA.costs.cache)),
+      clockTier: sanitizeNum(data.costs?.clockTier, 0),
+      coreTier: sanitizeNum(data.costs?.coreTier, 0),
+      cacheTier: sanitizeNum(data.costs?.cacheTier, 0),
     },
     stats: {
-      totalMoneyEarned: sanitizeNum(data.stats?.totalMoneyEarned, sanitizeNum(data.money, 0)),
+      totalMoneyEarned: totalMoney,
+      totalMoneyTier,
       totalClicks: sanitizeNum(data.stats?.totalClicks, 0),
       gameStartTime: sanitizeNum(data.stats?.gameStartTime, Date.now()),
       lastSavedTimestamp: sanitizeNum(data.stats?.lastSavedTimestamp, Date.now()),
       offlineEarningsClaimedTotal: sanitizeNum(data.stats?.offlineEarningsClaimedTotal, 0),
+      offlineEarningsClaimedTier: sanitizeNum(data.stats?.offlineEarningsClaimedTier, 0),
       timesUpgraded: sanitizeNum(data.stats?.timesUpgraded, 0),
       timesTimeSlipped: sanitizeNum(data.stats?.timesTimeSlipped, 0),
     },
@@ -173,9 +199,10 @@ export function saveGameData(data: GameSaveData): boolean {
  */
 export function calculateOfflineEarnings(
   lastSavedTimestamp: number,
-  flops: number
-): { elapsedSeconds: number; offlineEarned: number } | null {
-  if (!lastSavedTimestamp || flops <= 0) return null;
+  flops: number,
+  flopsTier: number = 0
+): { elapsedSeconds: number; offlineEarned: number; offlineTier: number } | null {
+  if (!lastSavedTimestamp || (flops <= 0 && flopsTier <= 0)) return null;
 
   const now = Date.now();
   const diffMs = now - lastSavedTimestamp;
@@ -188,13 +215,20 @@ export function calculateOfflineEarnings(
 
   // Cap offline calculation at 7 days (604,800 seconds)
   const cappedSeconds = Math.min(elapsedSeconds, 7 * 24 * 60 * 60);
-  const offlineEarned = Math.floor(cappedSeconds * flops);
+  let offlineEarned = cappedSeconds * flops;
+  let offlineTier = flopsTier;
 
-  if (offlineEarned <= 0) return null;
+  while (offlineEarned >= 1e100) {
+    offlineEarned /= 1e100;
+    offlineTier++;
+  }
+
+  if (offlineEarned <= 0 && offlineTier <= 0) return null;
 
   return {
     elapsedSeconds,
     offlineEarned,
+    offlineTier,
   };
 }
 

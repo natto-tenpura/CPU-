@@ -14,8 +14,11 @@ import {
 import {
   Architecture,
   getArchitecture,
-  getTimeSlipCost,
+  getTimeSlipCostTiered,
   getTimeSlipMultiplier,
+  formatCurrency,
+  compareAmounts,
+  subtractCost,
 } from '../types.ts';
 
 interface TimeSlipModalProps {
@@ -23,6 +26,7 @@ interface TimeSlipModalProps {
   onClose: () => void;
   timeSlipCount: number;
   currentMoney: number;
+  currentMoneyTier?: number;
   onConfirmTimeSlip: () => void;
   formatNumber: (num: number) => string;
 }
@@ -32,14 +36,17 @@ export const TimeSlipModal: React.FC<TimeSlipModalProps> = ({
   onClose,
   timeSlipCount,
   currentMoney,
+  currentMoneyTier = 0,
   onConfirmTimeSlip,
   formatNumber,
 }) => {
   if (!isOpen) return null;
 
-  const currentCost = getTimeSlipCost(timeSlipCount);
-  const nextNextCost = getTimeSlipCost(timeSlipCount + 1);
-  const canAfford = currentMoney >= currentCost;
+  const currentCost = getTimeSlipCostTiered(timeSlipCount);
+  const nextNextCost = getTimeSlipCostTiered(timeSlipCount + 1);
+  const playerMoney = { value: currentMoney, tier: currentMoneyTier };
+  const canAfford = compareAmounts(playerMoney, currentCost) >= 0;
+  const remainingNeeded = subtractCost(currentCost, playerMoney);
 
   const currentTimelineNum = timeSlipCount + 1;
   const nextTimelineNum = timeSlipCount + 2;
@@ -101,16 +108,16 @@ export const TimeSlipModal: React.FC<TimeSlipModalProps> = ({
           </div>
           <div className="flex items-baseline justify-between">
             <span className="text-2xl font-black text-amber-400">
-              ${formatNumber(currentCost)}
+              {formatCurrency(currentCost.value, currentCost.tier, formatNumber)}
             </span>
             <span className="text-xs text-gray-400">
-              所持: <strong className="text-white">${formatNumber(currentMoney)}</strong>
+              所持: <strong className="text-white">{formatCurrency(currentMoney, currentMoneyTier, formatNumber)}</strong>
             </span>
           </div>
           {!canAfford && (
             <p className="text-[11px] text-rose-400 mt-2 flex items-center gap-1">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-              あと ${formatNumber(currentCost - currentMoney)} 必要です
+              あと {formatCurrency(remainingNeeded.value, remainingNeeded.tier, formatNumber)} 必要です
             </p>
           )}
         </div>
@@ -209,7 +216,10 @@ export const TimeSlipModal: React.FC<TimeSlipModalProps> = ({
                 <div>
                   <span className="text-blue-300 font-semibold block">次回跳躍費用の高騰 (10,000倍):</span>
                   次回のタイムスリップ必要資金は{' '}
-                  <strong className="text-amber-300">${formatNumber(nextNextCost)}</strong>（現在の10,000倍）に上昇します。
+                  <strong className="text-amber-300">
+                    {formatCurrency(nextNextCost.value, nextNextCost.tier, formatNumber)}
+                  </strong>
+                  （現在の10,000倍）に上昇します。
                 </div>
               </div>
             </div>
@@ -243,7 +253,9 @@ export const TimeSlipModal: React.FC<TimeSlipModalProps> = ({
             }}
           >
             <Hourglass className="w-4 h-4" />
-            {canAfford ? '時空を超越してタイムスリップ！' : `資金不足 ($${formatNumber(currentCost)}必要)`}
+            {canAfford
+              ? '時空を超越してタイムスリップ！'
+              : `資金不足 (${formatCurrency(currentCost.value, currentCost.tier, formatNumber)}必要)`}
           </button>
         </div>
       </div>
