@@ -387,22 +387,27 @@ export function getFlopsTiered(
 
 /**
  * Calculates Click Gain as a TieredAmount.
+ * Whenever the currency unit changes (tier increases by 1), click gain increases by 10^100x (+1 tier).
  */
 export function getClickGainTiered(
   clockKhz: number,
   clickMultiplier: number,
   archMult: number,
-  timeSlipCount: number
+  timeSlipCount: number,
+  currencyTier: number = 0
 ): TieredAmount {
   const baseGain = Math.max(1, (clockKhz / 100) * clickMultiplier * archMult);
   const baseLog = Math.log10(baseGain);
   const totalExp = baseLog + Math.max(0, timeSlipCount);
 
-  const tier = Math.floor(totalExp / 100);
-  const remainderExp = totalExp - tier * 100;
+  const baseTier = Math.floor(totalExp / 100);
+  const remainderExp = totalExp - baseTier * 100;
   const value = Math.pow(10, remainderExp);
 
-  return { value, tier };
+  // Each currency unit tier multiplies click gain by 10^100 (+1 tier):
+  const effectiveTier = baseTier + Math.max(0, Math.floor(currencyTier));
+
+  return normalizeTieredAmount({ value, tier: effectiveTier });
 }
 
 export function getTimeSlipMultiplier(timeSlipCount: number): number {
@@ -443,6 +448,7 @@ export interface GameSaveData {
   version: number;
   money: number;
   moneyTier?: number; // 0 for $, 1 for G$, 2 for G^2$
+  currencyTier?: number; // Highest currency unit tier achieved in the current timeline (0: $, 1: G$, etc.)
   clockKhz: number;
   cores: number;
   clickMultiplier: number;

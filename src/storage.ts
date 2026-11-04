@@ -19,6 +19,7 @@ export const DEFAULT_SAVE_DATA: GameSaveData = {
   version: SAVE_FORMAT_VERSION,
   money: 0,
   moneyTier: 0,
+  currencyTier: 0,
   clockKhz: 740,
   cores: 1,
   clickMultiplier: 1,
@@ -79,10 +80,13 @@ function sanitizeSaveData(data: Partial<GameSaveData>): GameSaveData {
     totalMoneyTier += 1;
   }
 
+  const currencyTier = Math.max(sanitizeNum(data.currencyTier, 0), moneyTier);
+
   return {
     version: SAVE_FORMAT_VERSION,
     money: rawMoney,
     moneyTier,
+    currencyTier,
     clockKhz: Math.max(740, sanitizeNum(data.clockKhz, DEFAULT_SAVE_DATA.clockKhz)),
     cores: Math.max(1, sanitizeNum(data.cores, DEFAULT_SAVE_DATA.cores)),
     clickMultiplier: Math.max(1, sanitizeNum(data.clickMultiplier, DEFAULT_SAVE_DATA.clickMultiplier)),
