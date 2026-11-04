@@ -19,6 +19,7 @@ import {
   formatCurrency,
   compareAmounts,
   subtractCost,
+  SKIP_EXPLANATION_TIMELINE,
 } from '../types.ts';
 
 interface TimeSlipModalProps {
@@ -53,6 +54,8 @@ export const TimeSlipModal: React.FC<TimeSlipModalProps> = ({
 
   const currentMultiplier = getTimeSlipMultiplier(timeSlipCount);
   const nextMultiplier = getTimeSlipMultiplier(timeSlipCount + 1);
+
+  const isSkipExplanation = currentTimelineNum >= SKIP_EXPLANATION_TIMELINE;
 
   // The architecture currently capped, and the one that will be newly unlocked
   const currentMaxLevel = 6 + timeSlipCount;
@@ -122,11 +125,19 @@ export const TimeSlipModal: React.FC<TimeSlipModalProps> = ({
           )}
         </div>
 
-        {/* What Happens Section */}
-        <div className="space-y-3 mb-6">
-          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-            タイムスリップ実行時の変化
-          </h3>
+        {/* Explanation Section: Automatically omitted from 70th generation timeline */}
+        {isSkipExplanation ? (
+          <div className="bg-purple-950/30 border border-purple-500/30 rounded-xl p-3 mb-5 text-xs text-purple-300 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="text-[11px]">
+              第70世代世界線特典: タイムスリップ説明は省略されています（即時跳躍可能）。
+            </span>
+          </div>
+        ) : (
+          <div className="space-y-3 mb-6">
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+              タイムスリップ実行時の変化
+            </h3>
 
           {/* Reset & Inheritance Information */}
           <div className="bg-[#0b0f16] border border-rose-900/40 rounded-xl p-3.5 text-xs space-y-2">
@@ -225,6 +236,7 @@ export const TimeSlipModal: React.FC<TimeSlipModalProps> = ({
             </div>
           </div>
         </div>
+      )}
 
         {/* Buttons */}
         <div className="flex items-center gap-3">

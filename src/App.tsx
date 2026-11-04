@@ -34,6 +34,7 @@ import {
   getTimeSlipCostTiered,
   getTimeSlipMultiplier,
   AUTO_UPGRADE_UNLOCK_TIMELINE,
+  SKIP_EXPLANATION_TIMELINE,
   TieredAmount,
   normalizeTieredAmount,
   compareAmounts,
@@ -123,6 +124,7 @@ export default function App() {
   const currentTimeline = timeSlipCount + 1;
   const isAutoUpgradeUnlocked = currentTimeline >= AUTO_UPGRADE_UNLOCK_TIMELINE;
   const isAutoUpgradeEnabled = isAutoUpgradeUnlocked && gameState.settings.autoUpgradeEnabled !== false;
+  const isSkipExplanation = currentTimeline >= SKIP_EXPLANATION_TIMELINE;
 
   const currentArch: Architecture = getArchitecture(gameState.architectureLevel);
   const isMaxEvolution = gameState.architectureLevel >= maxAllowedArch;
@@ -165,6 +167,7 @@ export default function App() {
     if ((currentData.timeSlipCount || 0) >= 1) unlocked.add('timeslip_1');
     if ((currentData.timeSlipCount || 0) >= 3) unlocked.add('timeslip_3');
     if ((currentData.timeSlipCount || 0) >= 29) unlocked.add('timeslip_30');
+    if ((currentData.timeSlipCount || 0) >= 69) unlocked.add('timeslip_70');
     if ((currentData.moneyTier && currentData.moneyTier >= 1) || (currentData.stats.totalMoneyTier && currentData.stats.totalMoneyTier >= 1)) {
       unlocked.add('googol_tier');
     }
@@ -670,6 +673,15 @@ export default function App() {
     setTimeout(() => setSaveNotice(null), 6000);
   };
 
+  // Time Slip trigger: skips explanation dialog directly from 70th generation timeline
+  const handleTimeSlipTrigger = () => {
+    if (isSkipExplanation && isMaxEvolution && canTimeSlip) {
+      handleConfirmTimeSlip();
+      return;
+    }
+    setIsTimeSlipOpen(true);
+  };
+
   // Toggle Sound
   const toggleSound = () => {
     setGameState((prev) => {
@@ -1035,7 +1047,7 @@ export default function App() {
 
             {/* Evolution Upgrade */}
             <button
-              onClick={!isMaxEvolution ? handleEvolveArchitecture : () => setIsTimeSlipOpen(true)}
+              onClick={!isMaxEvolution ? handleEvolveArchitecture : handleTimeSlipTrigger}
               disabled={!isMaxEvolution && compareAmounts(playerMoney, { value: currentArch.cost, tier: currentArch.costTier || 0 }) < 0}
               className={`w-full bg-[#21262d] border-2 p-3.5 rounded-xl flex items-center justify-between transition-all cursor-pointer text-left shadow-lg ${
                 isMaxEvolution
@@ -1050,7 +1062,11 @@ export default function App() {
                       isMaxEvolution ? 'text-purple-300' : 'text-[#f1e05a]'
                     }`}
                   >
-                    {isMaxEvolution ? '現タイムライン進化上限 (MAX)' : 'プロセス世代交代 (進化)'}
+                    {isMaxEvolution
+                      ? isSkipExplanation && canTimeSlip
+                        ? '現世代上限到達 (⚡即時タイムスリップ可)'
+                        : '現タイムライン進化上限 (MAX)'
+                      : 'プロセス世代交代 (進化)'}
                   </strong>
                   <ChevronRight
                     className={`w-4 h-4 ${isMaxEvolution ? 'text-purple-400' : 'text-[#f1e05a]'}`}
@@ -1125,27 +1141,41 @@ export default function App() {
             </div>
           </div>
 
-          <p className="text-xs text-gray-300 leading-relaxed mb-3">
-            {isMaxEvolution ? (
-              <>
-                進化がMAXに到達しました！タイムスリップを実行すると
-                <strong className="text-rose-400">「所持資金は $0 にリセット」</strong>
-                されますが、
-                <strong className="text-emerald-400">「CPUスペック（現行アーキテクチャ・クロック数・コア数・強化）はそのまま保持」</strong>
-                され、恒久演算倍率が <strong className="text-amber-400">x10倍</strong> 強化されて新アーキテクチャ
-                <strong className="text-pink-300">「{newlyUnlockableOnTimeSlip.name}」</strong>
-                への進化が解放されます。
-                <span className="text-gray-400 block text-[11px] mt-0.5">
-                  ※タイムスリップにかかる資金は跳躍するたびに10,000倍（桁違いに急増）になります。
+          {isSkipExplanation ? (
+            <div className="bg-purple-950/30 border border-purple-500/30 rounded-xl p-3 mb-3 text-xs text-purple-300 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+                <span className="font-semibold">
+                  第70世代世界線特典: タイムスリップ説明ダイアログは自動スキップされます
                 </span>
-              </>
-            ) : (
-              <>
-                現タイムラインの進化がMAX（{getArchitecture(maxAllowedArch).name}）に到達するとタイムスリップが実行可能になります。
-                CPUスペックを保持したまま資金のみリセットして次世代世界線へ跳躍し、さらなる進化を解放できます。
-              </>
-            )}
-          </p>
+              </div>
+              <span className="text-[11px] text-pink-300 font-bold px-2 py-0.5 rounded bg-purple-900/60 border border-purple-500/40 shrink-0">
+                即時跳躍モード
+              </span>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-300 leading-relaxed mb-3">
+              {isMaxEvolution ? (
+                <>
+                  進化がMAXに到達しました！タイムスリップを実行すると
+                  <strong className="text-rose-400">「所持資金は $0 にリセット」</strong>
+                  されますが、
+                  <strong className="text-emerald-400">「CPUスペック（現行アーキテクチャ・クロック数・コア数・強化）はそのまま保持」</strong>
+                  され、恒久演算倍率が <strong className="text-amber-400">x10倍</strong> 強化されて新アーキテクチャ
+                  <strong className="text-pink-300">「{newlyUnlockableOnTimeSlip.name}」</strong>
+                  への進化が解放されます。
+                  <span className="text-gray-400 block text-[11px] mt-0.5">
+                    ※タイムスリップにかかる資金は跳躍するたびに10,000倍（桁違いに急増）になります。
+                  </span>
+                </>
+              ) : (
+                <>
+                  現タイムラインの進化がMAX（{getArchitecture(maxAllowedArch).name}）に到達するとタイムスリップが実行可能になります。
+                  CPUスペックを保持したまま資金のみリセットして次世代世界線へ跳躍し、さらなる進化を解放できます。
+                </>
+              )}
+            </p>
+          )}
 
           {/* Progress to Time Slip Cost */}
           <div className="bg-[#0b0f16] rounded-xl p-3 border border-gray-800 mb-4">
@@ -1167,7 +1197,7 @@ export default function App() {
 
           {/* Time Slip Action Button */}
           <button
-            onClick={() => setIsTimeSlipOpen(true)}
+            onClick={handleTimeSlipTrigger}
             className={`w-full py-3.5 px-4 rounded-xl text-xs sm:text-sm font-bold tracking-wide transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg ${
               isMaxEvolution && canTimeSlip
                 ? 'bg-gradient-to-r from-purple-600 via-pink-600 to-amber-500 hover:from-purple-500 hover:to-amber-400 text-white animate-pulse'
@@ -1177,7 +1207,9 @@ export default function App() {
             <Hourglass className="w-4 h-4" />
             {isMaxEvolution
               ? canTimeSlip
-                ? '🌌 タイムスリップを実行（資金リセット ＆ 更なる進化解放）'
+                ? isSkipExplanation
+                  ? '⚡ タイムスリップを実行（説明省略・即時跳躍）'
+                  : '🌌 タイムスリップを実行（資金リセット ＆ 更なる進化解放）'
                 : `タイムスリップの準備中 (あと ${formatCurrency(remainingTimeSlip.value, remainingTimeSlip.tier, formatNumber)} 必要)`
               : 'タイムスリップの詳細・ロードマップを確認'}
           </button>

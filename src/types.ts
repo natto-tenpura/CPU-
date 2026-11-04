@@ -431,6 +431,7 @@ export interface GameStats {
 }
 
 export const AUTO_UPGRADE_UNLOCK_TIMELINE = 30; // 第30世代世界線で自動アップグレード解放
+export const SKIP_EXPLANATION_TIMELINE = 70; // 第70世代世界線から説明を非表示・即時タイムスリップ
 
 export interface GameSettings {
   soundEnabled: boolean;
