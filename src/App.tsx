@@ -140,14 +140,24 @@ export default function App() {
   const timeSlipCost = getTimeSlipCostTiered(timeSlipCount);
   const playerMoney: TieredAmount = { value: gameState.money, tier: gameState.moneyTier || 0 };
   const canTimeSlip = compareAmounts(playerMoney, timeSlipCost) >= 0;
-  const newlyUnlockableOnTimeSlip = getArchitecture(maxAllowedArch + 1);
+  const newlyUnlockedStart = getArchitecture(maxAllowedArch + 1);
+  const newlyUnlockedEnd = getArchitecture(getMaxArchitectureLevel(timeSlipCount + 1));
+
+  // Current generation evolution progress: 5 process evolutions per Time Slip!
+  const currentGenBaseLevel = timeSlipCount === 0 ? 0 : 6 + (timeSlipCount - 1) * 5;
+  const currentGenTotalSteps = timeSlipCount === 0 ? 6 : 5;
+  const evolutionsInCurrentGen = Math.min(
+    currentGenTotalSteps,
+    Math.max(0, gameState.architectureLevel - currentGenBaseLevel)
+  );
 
   // FLOPS (演算能力 with Time Slip permanent multiplier) as TieredAmount
   const flopsTiered = getFlopsTiered(
     gameState.clockKhz,
     gameState.cores,
     currentArch.mult,
-    timeSlipCount
+    timeSlipCount,
+    currentArch.multTier || 0
   );
 
   const currentCurrencyTier = Math.max(gameState.currencyTier || 0, gameState.moneyTier || 0);
@@ -158,7 +168,8 @@ export default function App() {
     gameState.clickMultiplier,
     currentArch.mult,
     timeSlipCount,
-    currentCurrencyTier
+    currentCurrencyTier,
+    currentArch.multTier || 0
   );
 
   // Check achievements
@@ -217,7 +228,8 @@ export default function App() {
       data.clockKhz,
       data.cores,
       arch.mult,
-      data.timeSlipCount || 0
+      data.timeSlipCount || 0,
+      arch.multTier || 0
     );
     const offlineResult = calculateOfflineEarnings(
       data.stats.lastSavedTimestamp,
@@ -288,7 +300,8 @@ export default function App() {
         current.clockKhz,
         current.cores,
         arch.mult,
-        current.timeSlipCount || 0
+        current.timeSlipCount || 0,
+        arch.multTier || 0
       );
 
       // Per tick is currentFlops / 10
@@ -506,7 +519,8 @@ export default function App() {
         prev.clickMultiplier,
         currentArch.mult,
         prev.timeSlipCount || 0,
-        activeCurrencyTier
+        activeCurrencyTier,
+        currentArch.multTier || 0
       );
       const addedMoney = addAmounts(
         { value: prev.money, tier: prev.moneyTier || 0 },
@@ -728,9 +742,11 @@ export default function App() {
 
       setIsTimeSlipping(false);
 
-      const newlyUnlocked = getArchitecture(maxAllowedArch + 1);
+      const nextTimelineMax = getMaxArchitectureLevel(timeSlipCount + 1);
+      const newlyUnlockedStart = getArchitecture(maxAllowedArch + 1);
+      const newlyUnlockedEnd = getArchitecture(nextTimelineMax);
       setSaveNotice(
-        `第 ${timeSlipCount + 2} 世代世界線へタイムスリップ完了！新アーキテクチャ「${newlyUnlocked.name}」への進化が解放されました！`
+        `第 ${timeSlipCount + 2} 世代世界線へタイムスリップ完了！新たに5段階のプロセス進化（「${newlyUnlockedStart.name}」〜「${newlyUnlockedEnd.name}」）が解放されました！`
       );
       setTimeout(() => setSaveNotice(null), 6000);
     }, 1000);
@@ -1156,9 +1172,9 @@ export default function App() {
                   >
                     {isMaxEvolution
                       ? isSkipExplanation && canTimeSlip
-                        ? '現世代上限到達 (⚡即時タイムスリップ可)'
-                        : '現タイムライン進化上限 (MAX)'
-                      : 'プロセス世代交代 (進化)'}
+                        ? `現世代上限到達 (${currentGenTotalSteps}/${currentGenTotalSteps}回完了 ⚡即時跳躍可)`
+                        : `現世代上限到達 (${currentGenTotalSteps}/${currentGenTotalSteps}回完了 - MAX)`
+                      : `プロセス世代交代 (進化: ${evolutionsInCurrentGen}/${currentGenTotalSteps}回)`}
                   </strong>
                   <ChevronRight
                     className={`w-4 h-4 ${isMaxEvolution ? 'text-purple-400' : 'text-[#f1e05a]'}`}
@@ -1166,8 +1182,8 @@ export default function App() {
                 </div>
                 <p className="text-xs text-gray-300 mt-0.5">
                   {!isMaxEvolution && nextArch
-                    ? `次世代「${nextArch.name}」へ微細化 (生産倍率 x${nextArch.mult.toLocaleString()})`
-                    : `これ以上の進化はタイムスリップが必要です (次: ${newlyUnlockableOnTimeSlip.name})`}
+                    ? `次世代「${nextArch.name}」へ微細化 (生産倍率 x${formatNumber(nextArch.mult)}${nextArch.multTier ? `·10^${nextArch.multTier * 100}` : ''}) [今世代進捗: ${evolutionsInCurrentGen}/${currentGenTotalSteps}回]`
+                    : `現世代の全5回微細化が完了！タイムスリップで次の5段階（「${newlyUnlockedStart.name}」〜）が解放されます`}
                 </p>
               </div>
               <div className="text-right">
@@ -1249,21 +1265,21 @@ export default function App() {
             <p className="text-xs text-gray-300 leading-relaxed mb-3">
               {isMaxEvolution ? (
                 <>
-                  進化がMAXに到達しました！タイムスリップを実行すると
+                  現世代の進化（全{currentGenTotalSteps}回）が完了しました！タイムスリップを実行すると
                   <strong className="text-rose-400">「所持資金は $0 にリセット」</strong>
                   されますが、
                   <strong className="text-emerald-400">「CPUスペック（現行アーキテクチャ・クロック数・コア数・強化）はそのまま保持」</strong>
-                  され、恒久演算倍率が <strong className="text-amber-400">x10倍</strong> 強化されて新アーキテクチャ
-                  <strong className="text-pink-300">「{newlyUnlockableOnTimeSlip.name}」</strong>
-                  への進化が解放されます。
+                  され、恒久演算倍率が <strong className="text-amber-400">x10倍</strong> 強化されて新たに5段階のプロセス進化
+                  <strong className="text-pink-300">「{newlyUnlockedStart.name}」〜「{newlyUnlockedEnd.name}」</strong>
+                  が一挙に解放されます。
                   <span className="text-gray-400 block text-[11px] mt-0.5">
                     ※タイムスリップにかかる資金は跳躍するたびに10,000倍（桁違いに急増）になります。
                   </span>
                 </>
               ) : (
                 <>
-                  現タイムラインの進化がMAX（{getArchitecture(maxAllowedArch).name}）に到達するとタイムスリップが実行可能になります。
-                  CPUスペックを保持したまま資金のみリセットして次世代世界線へ跳躍し、さらなる進化を解放できます。
+                  現タイムラインの進化が上限（{getArchitecture(maxAllowedArch).name}）に到達するとタイムスリップが実行可能になります（現在進捗: {evolutionsInCurrentGen}/{currentGenTotalSteps}回）。
+                  CPUスペックを保持したまま資金のみリセットして次世代世界線へ跳躍し、さらに5段階のプロセス進化を解放できます。
                 </>
               )}
             </p>
@@ -1380,6 +1396,8 @@ export default function App() {
         timeSlipCount={timeSlipCount}
         currentMoney={gameState.money}
         currentMoneyTier={gameState.moneyTier || 0}
+        architectureLevel={gameState.architectureLevel}
+        isMaxEvolution={isMaxEvolution}
         onConfirmTimeSlip={handleConfirmTimeSlip}
         formatNumber={formatNumber}
       />

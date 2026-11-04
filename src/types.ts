@@ -7,6 +7,7 @@ export interface Architecture {
   name: string;
   node: string;
   mult: number;
+  multTier?: number; // Tiered multiplier for extreme timelines to avoid Infinity overflow
   cost: number;
   costTier?: number; // 0 for $, 1 for G$, etc.
   year: string;
@@ -92,7 +93,7 @@ export const BASE_ARCHITECTURES: Architecture[] = [
     description: "量子重ね合わせと超伝導回路による非ノイマン型超高速並列量子演算。",
     color: "#f59e0b"
   },
-  // Further transcendent evolutions unlocked via Time Slip:
+  // タイムスリップ1回あたり5段階解放される超越アーキテクチャ:
   {
     id: 7,
     name: "光子ニューロモルフィック",
@@ -152,8 +153,22 @@ export const BASE_ARCHITECTURES: Architecture[] = [
 
 export const ARCHITECTURES: Architecture[] = BASE_ARCHITECTURES;
 
+const EPOCH_NAMES = [
+  "多次元タキオン超越体",
+  "暗黒エネルギー情報凝縮核",
+  "真空崩壊ゼロ点ダイ",
+  "事象の地平線量子アレイ",
+  "超弦ホログラフィック格子",
+  "宇宙因果律リライター",
+  "虚数時間エンタングルメント",
+  "超光速トポロジカルブレイン",
+  "オメガ特異点ハイパーノード",
+  "無限多元宇宙超越コア"
+];
+
 /**
  * Returns architecture definition, dynamically generating higher iterations if beyond predefined list.
+ * Supports arbitrary timelines without numeric overflow.
  */
 export function getArchitecture(level: number): Architecture {
   if (level < BASE_ARCHITECTURES.length) {
@@ -162,19 +177,30 @@ export function getArchitecture(level: number): Architecture {
   const extra = level - BASE_ARCHITECTURES.length + 1;
   const last = BASE_ARCHITECTURES[BASE_ARCHITECTURES.length - 1];
 
+  // Safely compute tiered cost
   const costExp = Math.log10(last.cost) + extra * Math.log10(25);
   const costTier = Math.floor(costExp / 100);
   const costRem = costExp - costTier * 100;
 
+  // Safely compute tiered multiplier so it never overflows Number.MAX_VALUE
+  const multExp = Math.log10(last.mult) + extra * Math.log10(15);
+  const multTier = Math.floor(multExp / 100);
+  const multRem = multExp - multTier * 100;
+
+  const epochIndex = Math.floor((extra - 1) / 5) % EPOCH_NAMES.length;
+  const stepInEpoch = ((extra - 1) % 5) + 1;
+  const epochName = EPOCH_NAMES[epochIndex];
+
   return {
     id: level,
-    name: `高次元オメガ超越コア MK-${extra}`,
+    name: `${epochName} MK-${stepInEpoch}`,
     node: `Trans-finite Dim ${extra}`,
-    mult: last.mult * Math.pow(15, extra),
+    mult: Math.pow(10, multRem),
+    multTier,
     cost: Math.pow(10, costRem),
     costTier,
     year: `ERA-Ω+${extra}`,
-    description: `第${extra}重オムニ次元の時空超越演算体を統合した高次元特異点プロセッサ。`,
+    description: `第${extra}重オムニ次元の時空超越演算体を統合した高次元特異点プロセッサ (第${stepInEpoch}/5段階)。`,
     color: extra % 2 === 0 ? "#ec4899" : "#8b5cf6"
   };
 }
@@ -182,10 +208,10 @@ export function getArchitecture(level: number): Architecture {
 /**
  * The maximum evolution level available for a given timeSlipCount.
  * Base game (timeSlipCount=0): MAX level is 6 (超伝導・量子プロセッサ).
- * Each Time Slip raises the MAX cap by +1!
+ * Each Time Slip allows exactly 5 process evolutions (+5 cap per Time Slip)!
  */
 export function getMaxArchitectureLevel(timeSlipCount: number): number {
-  return 6 + Math.max(0, timeSlipCount);
+  return 6 + Math.max(0, Math.floor(timeSlipCount)) * 5;
 }
 
 // -------------------------------------------------------------
@@ -370,13 +396,14 @@ export function getFlopsTiered(
   clockKhz: number,
   cores: number,
   archMult: number,
-  timeSlipCount: number
+  timeSlipCount: number,
+  archMultTier: number = 0
 ): TieredAmount {
-  const baseFlops = (clockKhz / 10) * cores * archMult;
+  const baseFlops = (clockKhz / 10) * cores * Math.max(1, archMult);
   if (baseFlops <= 0) return { value: 0, tier: 0 };
 
   const baseLog = Math.log10(baseFlops);
-  const totalExp = baseLog + Math.max(0, timeSlipCount);
+  const totalExp = baseLog + Math.max(0, timeSlipCount) + Math.max(0, archMultTier) * 100;
 
   const tier = Math.floor(totalExp / 100);
   const remainderExp = totalExp - tier * 100;
@@ -394,11 +421,12 @@ export function getClickGainTiered(
   clickMultiplier: number,
   archMult: number,
   timeSlipCount: number,
-  currencyTier: number = 0
+  currencyTier: number = 0,
+  archMultTier: number = 0
 ): TieredAmount {
-  const baseGain = Math.max(1, (clockKhz / 100) * clickMultiplier * archMult);
+  const baseGain = Math.max(1, (clockKhz / 100) * clickMultiplier * Math.max(1, archMult));
   const baseLog = Math.log10(baseGain);
-  const totalExp = baseLog + Math.max(0, timeSlipCount);
+  const totalExp = baseLog + Math.max(0, timeSlipCount) + Math.max(0, archMultTier) * 100;
 
   const baseTier = Math.floor(totalExp / 100);
   const remainderExp = totalExp - baseTier * 100;

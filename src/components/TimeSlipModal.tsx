@@ -14,6 +14,7 @@ import {
 import {
   Architecture,
   getArchitecture,
+  getMaxArchitectureLevel,
   getTimeSlipCostTiered,
   getTimeSlipMultiplier,
   formatCurrency,
@@ -28,6 +29,8 @@ interface TimeSlipModalProps {
   timeSlipCount: number;
   currentMoney: number;
   currentMoneyTier?: number;
+  architectureLevel?: number;
+  isMaxEvolution?: boolean;
   onConfirmTimeSlip: () => void;
   formatNumber: (num: number) => string;
 }
@@ -38,6 +41,8 @@ export const TimeSlipModal: React.FC<TimeSlipModalProps> = ({
   timeSlipCount,
   currentMoney,
   currentMoneyTier = 0,
+  architectureLevel = 0,
+  isMaxEvolution = true,
   onConfirmTimeSlip,
   formatNumber,
 }) => {
@@ -57,10 +62,17 @@ export const TimeSlipModal: React.FC<TimeSlipModalProps> = ({
 
   const isSkipExplanation = currentTimelineNum >= SKIP_EXPLANATION_TIMELINE;
 
-  // The architecture currently capped, and the one that will be newly unlocked
-  const currentMaxLevel = 6 + timeSlipCount;
+  // Evolution limits: 5 process evolutions per Time Slip!
+  const currentMaxLevel = getMaxArchitectureLevel(timeSlipCount);
   const currentMaxArch: Architecture = getArchitecture(currentMaxLevel);
-  const newlyUnlockedArch: Architecture = getArchitecture(currentMaxLevel + 1);
+  const nextMaxLevel = getMaxArchitectureLevel(timeSlipCount + 1);
+  const newlyUnlockedStart: Architecture = getArchitecture(currentMaxLevel + 1);
+  const newlyUnlockedEnd: Architecture = getArchitecture(nextMaxLevel);
+
+  // Evolutions done in current generation:
+  const currentGenBaseLevel = timeSlipCount === 0 ? 0 : 6 + (timeSlipCount - 1) * 5;
+  const currentGenTotal = timeSlipCount === 0 ? 6 : 5;
+  const currentGenDone = Math.min(currentGenTotal, Math.max(0, architectureLevel - currentGenBaseLevel));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in font-mono">
@@ -176,18 +188,24 @@ export const TimeSlipModal: React.FC<TimeSlipModalProps> = ({
             </div>
 
             <div className="space-y-2">
-              {/* Higher Evolution Unlock */}
+              {/* Higher Evolution Unlock: 5 Stages */}
               <div className="flex items-start gap-2 bg-purple-950/30 p-2.5 rounded-lg border border-purple-500/30">
                 <TrendingUp className="w-4 h-4 text-purple-400 mt-0.5 shrink-0" />
                 <div className="text-[11px]">
                   <span className="text-purple-300 font-bold block">
-                    🔓 更なる高次元進化の解放！
+                    🔓 新たに5段階のプロセス進化が一挙解放！
                   </span>
                   <span className="text-gray-300">
                     現在の限界「{currentMaxArch.name}」を超え、新たに
-                    <strong className="text-pink-300">「{newlyUnlockedArch.name} ({newlyUnlockedArch.node})」</strong>
+                    <strong className="text-pink-300">
+                      「{newlyUnlockedStart.name}」〜「{newlyUnlockedEnd.name}」（計5段階）
+                    </strong>
                     へのプロセス微細化が可能になります！
                   </span>
+                  <div className="mt-1 flex items-center gap-1.5 text-[10px] text-purple-300 bg-purple-900/30 px-2 py-0.5 rounded border border-purple-500/20">
+                    <span>現世代進捗: {currentGenDone} / {currentGenTotal} 回完了</span>
+                    {isMaxEvolution && <span className="text-emerald-400 font-bold">(MAX達成済み)</span>}
+                  </div>
                 </div>
               </div>
 

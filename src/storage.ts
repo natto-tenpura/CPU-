@@ -90,7 +90,7 @@ function sanitizeSaveData(data: Partial<GameSaveData>): GameSaveData {
     clockKhz: Math.max(740, sanitizeNum(data.clockKhz, DEFAULT_SAVE_DATA.clockKhz)),
     cores: Math.max(1, sanitizeNum(data.cores, DEFAULT_SAVE_DATA.cores)),
     clickMultiplier: Math.max(1, sanitizeNum(data.clickMultiplier, DEFAULT_SAVE_DATA.clickMultiplier)),
-    architectureLevel: Math.min(maxAllowedArch, Math.max(0, Math.floor(sanitizeNum(data.architectureLevel, 0)))),
+    architectureLevel: Math.max(0, Math.floor(sanitizeNum(data.architectureLevel, 0))),
     timeSlipCount,
     costs: {
       clock: Math.max(10, sanitizeNum(data.costs?.clock, DEFAULT_SAVE_DATA.costs.clock)),
